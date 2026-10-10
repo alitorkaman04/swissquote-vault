@@ -21,6 +21,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     }
   })
   const [pendingRecovery, setPendingRecovery] = useState<RecoveryRequest | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const refresh = useCallback(async () => {
     const [b, d] = await Promise.all([getBalances(address), isDeployed(address)])
@@ -82,6 +83,18 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
           {" · "}
           {deployed === false ? "activates with your first transfer" : deployed ? "active" : ""}
         </div>
+        <button
+          className="btn ghost"
+          style={{ marginTop: 10, padding: "6px 12px", fontSize: 13 }}
+          onClick={() => {
+            navigator.clipboard.writeText(address).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            })
+          }}
+        >
+          {copied ? "Copied" : "Copy address"}
+        </button>
       </div>
 
       <div className="keys">
