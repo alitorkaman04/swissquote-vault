@@ -7,6 +7,7 @@ import {
   loadSession,
   loginWallet,
   resumeWallet,
+  signMessageWithPasskey,
   type Wallet,
   type WalletSession,
 } from "./lib/wallet"
@@ -22,6 +23,7 @@ type Screen =
   | { name: "onboard"; existing: { walletAddress: Address; passkeyName: string } | null }
   | { name: "backup-kit"; backupPrivateKey: `0x${string}` }
   | { name: "home"; offline?: boolean }
+  | { name: "locked"; offline?: boolean }
   | { name: "recover"; existing: { walletAddress: Address; passkeyName: string } }
   | { name: "swissquote-down" }
   | { name: "partner-recover"; knownAddress?: Address }
@@ -62,7 +64,8 @@ export default function App() {
           const w = await resumeWallet(local)
           if (cancelled) return
           setWallet(w)
-          setScreen({ name: "home" })
+          // A remembered Vault still opens only after Face ID / fingerprint.
+          setScreen({ name: "locked" })
         } else if (onFile) {
           setScreen({ name: "onboard", existing: { walletAddress: onFile.walletAddress, passkeyName: onFile.passkeyName } })
         } else {
@@ -149,7 +152,7 @@ export default function App() {
             const local = loadSession()
             if (!local) return
             setWallet(await resumeWallet(local))
-            setScreen({ name: "home", offline: true })
+            setScreen({ name: "locked", offline: true })
           }}
           onPartnerRecover={() => setScreen({ name: "partner-recover", knownAddress: loadSession()?.address })}
           onRetry={() => {
@@ -190,6 +193,10 @@ export default function App() {
 
       {!error && screen.name === "backup-kit" && wallet && (
         <BackupKit wallet={wallet} backupPrivateKey={screen.backupPrivateKey} onDone={() => setScreen({ name: "home" })} />
+      )}
+
+      {!error && screen.name === "locked" && wallet && (
+        <Unlock wallet={wallet} onUnlocked={() => setScreen({ name: "home", offline: screen.offline })} />
       )}
 
       {!error && screen.name === "home" && wallet && (bankSession || screen.offline) && (
@@ -475,6 +482,53 @@ export function Onboard({
         <div className="footer-note">
           <Icon name="lock" size={14} /> Swissquote never sees your passkey or your backup key
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Lock screen: a Vault remembered on this device opens only after the passkey's biometric check
+ * (Face ID / fingerprint), like a banking app. Signing in to Swissquote alone never opens the Vault.
+ */
+export function Unlock({ wallet, onUnlocked }: { wallet: Wallet; onUnlocked: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function unlock() {
+    setBusy(true)
+    setErr(null)
+    try {
+      // A local passkey signature: the OS shows its biometric prompt. Nothing is sent on-chain.
+      await signMessageWithPasskey(wallet, `Unlock Swissquote Vault ${wallet.session.address} at ${new Date().toISOString()}`)
+      onUnlocked()
+    } catch (e) {
+      const msg = errorMessage(e)
+      setErr(/NotAllowed|cancel|abort|timed out/i.test(msg) ? "Face ID / fingerprint was cancelled. Try again." : msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="screen">
+      <div className="title">
+        <span className="ico lg dark"><Icon name="lock" size={26} /></span>
+        <h1>Vault locked</h1>
+        <p>Your Swissquote login doesn’t open your Vault. Only your passkey does.</p>
+      </div>
+      <div className="card flat">
+        <span className="section-label">Your Vault</span>
+        <span className="mono">{wallet.session.address}</span>
+      </div>
+      {err && <Alert kind="bad">{err}</Alert>}
+      <Button variant="primary" icon="faceid" busy={busy} onClick={unlock} block>
+        Unlock with Face ID / fingerprint
+      </Button>
+      <div className="footer-note">
+        <Icon name="shield" size={14} /> Checked on this device; your key never leaves its secure chip
       </div>
     </div>
   )

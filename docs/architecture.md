@@ -77,7 +77,7 @@ No custom smart contracts and no custom cryptography: everything on-chain is Zer
 ## Authentication before signing
 
 1. **Identity:** the client signs in to Swissquote (existing e-banking login + 2FA). This proves *who* the client is and links the wallet to a KYC'd person.
-2. **Possession + biometrics:** every on-chain action needs a WebAuthn assertion from the passkey, which the device only releases after Face ID / Touch ID.
+2. **Possession + biometrics:** every on-chain action needs a WebAuthn assertion from the passkey, which the device only releases after Face ID / Touch ID. Opening the app is gated the same way: a Vault remembered on the device shows a lock screen, and only a passkey assertion opens it. The Swissquote login alone never does.
 3. **User verification:** WebAuthn `userVerification: required` means biometrics or the device PIN, depending on the device.
 4. **Origin binding:** WebAuthn ties the passkey to Swissquote's domain. A phishing site on another domain cannot ask for a signature with it.
 5. **Review:** before the passkey prompt, the client sees recipient, amount, fee (sponsored), balance after, compliance checks and an on-chain simulation.
