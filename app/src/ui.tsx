@@ -15,6 +15,19 @@ const PATHS: Record<string, ReactNode> = {
       <rect x="13" y="13" width="7" height="7" rx="2" />
     </>
   ),
+  partner: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
+      <path d="M15.5 5.3a3 3 0 0 1 0 5.6M17.5 14.6c1.6.6 2.7 2 3 4.4" />
+    </>
+  ),
+  power: (
+    <>
+      <path d="M12 3v8" />
+      <path d="M6.3 7.3a8 8 0 1 0 11.4 0" />
+    </>
+  ),
   shield: <path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6l-7-3Z" />,
   shieldCheck: (
     <>
@@ -311,6 +324,35 @@ export function errorMessage(e: unknown) {
     cur = err.cause
   }
   return [...new Set(parts)].join(" · ").slice(0, 400)
+}
+
+/** Circular countdown used by both recovery paths (Swissquote and the independent partner). */
+export function Countdown({ secondsLeft, total, label = "waiting period" }: { secondsLeft: number; total: number; label?: string }) {
+  const R = 64
+  const C = 2 * Math.PI * R
+  const progress = 1 - secondsLeft / Math.max(1, total)
+  return (
+    <div className="countdown" role="timer" aria-label={`${secondsLeft} seconds left`}>
+      <svg width="148" height="148" viewBox="0 0 148 148" aria-hidden="true">
+        <circle cx="74" cy="74" r={R} fill="none" stroke="var(--line)" strokeWidth="8" />
+        <circle
+          cx="74"
+          cy="74"
+          r={R}
+          fill="none"
+          stroke="var(--signal)"
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={C}
+          strokeDashoffset={C * (1 - progress)}
+          style={{ transition: "stroke-dashoffset 1s linear" }}
+        />
+      </svg>
+      <div className="num">
+        {secondsLeft}s<small>{label}</small>
+      </div>
+    </div>
+  )
 }
 
 /** A passkey name that is unique per device and moment, e.g. "demo-1010-120733" (month-day-hour-minute-second). */

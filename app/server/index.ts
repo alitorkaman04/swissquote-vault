@@ -9,8 +9,11 @@
  *   3. compliance (sanctions screening, approved dApp list)  -> /compliance/*
  *
  * Everything is stored in server/data.json. The bank key is a demo key.
- * The ONE thing that is real: the bank's signature is a genuine ECDSA approval
- * of the recovery user operation, verified on-chain by the weighted validator.
+ * What is real: the bank's signature is a genuine ECDSA approval of the recovery user
+ * operation, verified on-chain by the weighted validator - and before giving it, the bank
+ * checks the client's backup-key approval against the Vault's on-chain recovery keys
+ * (server/guardian.ts). The independent recovery partner is a SEPARATE process
+ * (server/partner.ts) with its own key and storage.
  */
 import express from "express"
 import cors from "cors"
@@ -18,34 +21,23 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
-import { createKernelAccount, createZeroDevPaymasterClient } from "@zerodev/sdk"
-import { getEntryPoint, KERNEL_V3_1 } from "@zerodev/sdk/constants"
-import {
-  WeightedValidatorContractVersion,
-  createWeightedKernelAccountClient,
-  createWeightedValidator,
-  getRecoveryAction,
-  toECDSASigner,
-} from "@zerodev/weighted-validator"
-import { type Address, type Hex, createPublicClient, decodeFunctionData, fallback, http, isAddress, parseAbi } from "viem"
+import { type Address, type Hex, isAddress } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
-import { baseSepolia } from "viem/chains"
 import { screenTransfer } from "./compliance.js"
+import { Refused, coSign, hasProjectId, isDoRecovery, isSignedByVault, publicClient, verifyClientApproval } from "./guardian.js"
 
 // ---------------------------------------------------------------- config
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = path.join(__dirname, "data.json")
 const PORT = Number(process.env.PORT ?? 8787)
-const PROJECT_ID = process.env.ZERODEV_PROJECT_ID ?? process.env.VITE_ZERODEV_PROJECT_ID
 const RECOVERY_DELAY_SECONDS = Number(process.env.RECOVERY_DELAY_SECONDS ?? process.env.VITE_RECOVERY_DELAY_SECONDS ?? 30)
-const CHAIN = baseSepolia
-const ZERODEV_RPC_URL = `https://rpc.zerodev.app/api/v3/${PROJECT_ID}/chain/${CHAIN.id}`
-const ENTRY_POINT = getEntryPoint("0.7")
-const KERNEL_VERSION = KERNEL_V3_1
 
 type Data = {
   bankGuardianPrivateKey: Hex
-  clients: Record<string, { name: string; walletAddress?: Address; backupAddress?: Address; passkeyName?: string; recoveredAt?: number }>
+  clients: Record<
+    string,
+    { name: string; walletAddress?: Address; backupAddress?: Address; partnerAddress?: Address; passkeyName?: string; recoveredAt?: number }
+  >
   tokens: Record<string, string> // token -> clientId
   recoveries: Record<string, Recovery>
 }
@@ -65,7 +57,7 @@ type Recovery = {
 function load(): Data {
   if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"))
   const fresh: Data = {
-    bankGuardianPrivateKey: (process.env.BANK_GUARDIAN_PRIVATE_KEY as Hex) ?? generatePrivateKey(),
+    bankGuardianPrivateKey: (process.env.BANK_GUARDIAN_PRIVATE_KEY as Hex) || generatePrivateKey(),
     clients: {
       // Demo client. Any clientId works on first login (auto-created) - this is a mock.
       "demo": { name: "Demo Client" },
@@ -81,22 +73,13 @@ function save(d: Data) {
 }
 const db = load()
 const bankAccount = privateKeyToAccount(db.bankGuardianPrivateKey)
-const publicClient = createPublicClient({
-  chain: CHAIN,
-  transport: fallback([
-    http("https://sepolia.base.org", { retryCount: 2 }),
-    http("https://base-sepolia-rpc.publicnode.com", { retryCount: 2 }),
-    http("https://base-sepolia.drpc.org", { retryCount: 2 }),
-  ]),
-})
-const RECOVERY_ABI = parseAbi(["function doRecovery(address _validator, bytes calldata _data)"])
 
 console.log(`Swissquote guardian service (MOCK)  http://localhost:${PORT}`)
 console.log(`  guardian address : ${bankAccount.address}`)
 console.log(`  recovery delay   : ${RECOVERY_DELAY_SECONDS}s (production: 48h)`)
 if (!process.env.BANK_GUARDIAN_PRIVATE_KEY)
   console.log("  NOTE: guardian key lives in server/data.json - keep that file (or set BANK_GUARDIAN_PRIVATE_KEY in .env)")
-if (!PROJECT_ID) console.warn("  WARNING: ZERODEV_PROJECT_ID not set - recovery signing will fail")
+if (!hasProjectId) console.warn("  WARNING: ZERODEV_PROJECT_ID not set - recovery signing will fail")
 
 // ---------------------------------------------------------------- helpers
 const app = express()
@@ -134,9 +117,11 @@ app.get("/guardian", (_req, res) => res.json({ address: bankAccount.address }))
 app.post("/wallet", (req, res) => {
   try {
     const clientId = auth(req.body?.token)
-    const { walletAddress, backupAddress, passkeyName } = req.body
+    const { walletAddress, backupAddress, partnerAddress, passkeyName } = req.body
     if (!isAddress(walletAddress) || !isAddress(backupAddress)) return res.status(400).send("bad addresses")
-    Object.assign(db.clients[clientId], { walletAddress, backupAddress, passkeyName })
+    if (partnerAddress !== undefined && !isAddress(partnerAddress)) return res.status(400).send("bad partner address")
+    // Public addresses only: Swissquote never receives the backup KEY.
+    Object.assign(db.clients[clientId], { walletAddress, backupAddress, partnerAddress, passkeyName, recoveredAt: undefined })
     save(db)
     res.json({ ok: true })
   } catch (e: any) {
@@ -148,7 +133,13 @@ app.get("/wallet", (req, res) => {
     const clientId = auth(String(req.query.token ?? ""))
     const c = db.clients[clientId]
     if (!c.walletAddress) return res.json(null)
-    res.json({ walletAddress: c.walletAddress, backupAddress: c.backupAddress, passkeyName: c.passkeyName, recoveredAt: c.recoveredAt ?? null })
+    res.json({
+      walletAddress: c.walletAddress,
+      backupAddress: c.backupAddress,
+      partnerAddress: c.partnerAddress ?? null,
+      passkeyName: c.passkeyName,
+      recoveredAt: c.recoveredAt ?? null,
+    })
   } catch (e: any) {
     res.status(e.status ?? 500).send(e.message)
   }
@@ -220,12 +211,7 @@ app.post("/recovery/request", (req, res) => {
     if (!c.walletAddress) return res.status(400).send("no wallet on file for this client")
     const { callData, newPasskeyName } = req.body
     // The bank only ever co-signs a doRecovery call (the on-chain selector binding enforces this too).
-    try {
-      const decoded = decodeFunctionData({ abi: RECOVERY_ABI, data: callData })
-      if (decoded.functionName !== "doRecovery") throw new Error()
-    } catch {
-      return res.status(400).send("recovery request must be a doRecovery call")
-    }
+    if (!isDoRecovery(callData)) return res.status(400).send("recovery request must be a doRecovery call")
     // One live recovery per wallet: a new request supersedes an abandoned one (new passkey = new callData).
     for (const r of Object.values(db.recoveries)) {
       if (r.walletAddress === c.walletAddress && ["pending", "ready"].includes(refreshStatus(r).status)) {
@@ -271,13 +257,8 @@ app.post("/recovery/:id/cancel", async (req, res) => {
   if (r.status === "signed") return res.status(409).send("already executed")
   let vetoedBy: "passkey" | "identity" | null = null
   const { signature, message, token } = req.body ?? {}
-  if (signature && message === cancelMessage(r.id)) {
-    try {
-      const ok = await publicClient.verifyMessage({ address: r.walletAddress, message, signature })
-      if (ok) vetoedBy = "passkey"
-    } catch (e) {
-      console.warn("[recovery] veto signature could not be verified:", (e as Error).message)
-    }
+  if (signature && message === cancelMessage(r.id) && (await isSignedByVault(r.walletAddress, message, signature))) {
+    vetoedBy = "passkey"
   }
   if (!vetoedBy && token && db.tokens[token] === r.clientId) vetoedBy = "identity"
   if (!vetoedBy) return res.status(401).send("veto must be signed by the current passkey or an authenticated client session")
@@ -294,17 +275,23 @@ app.post("/recovery/:id/sign", async (req, res) => {
   if (!req.body?.token || db.tokens[req.body.token] !== r.clientId) return res.status(401).send("not authenticated")
   refreshStatus(r)
   if (r.status === "cancelled") return res.status(409).send("recovery was cancelled")
-  if (r.status === "pending") return res.status(425).send(`delay not elapsed, ${Math.ceil((r.unlockAt - Date.now()) / 1000)}s left`)
-  if (r.bankSignature) return res.json({ signature: r.bankSignature })
   try {
-    const c = db.clients[r.clientId]
-    const signature = await bankApprove(r.walletAddress, c.backupAddress!, r.callData)
+    // Checked FIRST, before the delay: a login (e.g. via a stolen inbox) is never enough.
+    // The client's backup key must have approved exactly this recovery (verified against the chain).
+    await verifyClientApproval(bankAccount, r.walletAddress, r.callData, req.body?.backupApproval)
+    if (r.status === "pending") return res.status(425).send(`delay not elapsed, ${Math.ceil((r.unlockAt - Date.now()) / 1000)}s left`)
+    if (r.bankSignature) return res.json({ signature: r.bankSignature })
+    const signature = await coSign(bankAccount, r.walletAddress, r.callData)
     r.bankSignature = signature
     r.status = "signed"
     save(db)
-    console.log(`[recovery] ${r.id} co-signed by Swissquote guardian`)
+    console.log(`[recovery] ${r.id} backup approval verified on-chain; co-signed by Swissquote guardian`)
     res.json({ signature })
   } catch (e: any) {
+    if (e instanceof Refused) {
+      console.log(`[recovery] ${r.id} REFUSED: ${e.message}`)
+      return res.status(403).send(`Swissquote refused to co-sign: ${e.message}`)
+    }
     console.error(e)
     res.status(500).send(e.message)
   }
@@ -325,43 +312,6 @@ app.post("/recovery/:id/complete", (req, res) => {
   console.log(`[recovery] ${r.id} completed on-chain - ${r.newPasskeyName} is now the client's passkey`)
   res.json({ ok: true })
 })
-
-/** The bank's one real cryptographic act: approve the recovery user operation with its key share. */
-async function bankApprove(walletAddress: Address, backupAddress: Address, callData: Hex) {
-  const signer = await toECDSASigner({ signer: bankAccount })
-  const validator = await createWeightedValidator(publicClient, {
-    entryPoint: ENTRY_POINT,
-    kernelVersion: KERNEL_VERSION,
-    validatorContractVersion: WeightedValidatorContractVersion.V0_0_2_PATCHED,
-    signer,
-    config: {
-      threshold: 100,
-      signers: [
-        { publicKey: bankAccount.address, weight: 50 },
-        { publicKey: backupAddress, weight: 50 },
-      ],
-      delay: 0,
-    },
-  })
-  const account = await createKernelAccount(publicClient, {
-    address: walletAddress,
-    entryPoint: ENTRY_POINT,
-    kernelVersion: KERNEL_VERSION,
-    plugins: { regular: validator, action: getRecoveryAction(ENTRY_POINT.version) },
-  })
-  const paymaster = createZeroDevPaymasterClient({ chain: CHAIN, transport: http(ZERODEV_RPC_URL) })
-  const client = createWeightedKernelAccountClient({
-    account,
-    chain: CHAIN,
-    bundlerTransport: http(ZERODEV_RPC_URL),
-    client: publicClient,
-    paymaster: { getPaymasterData: (userOperation) => paymaster.sponsorUserOperation({ userOperation }) },
-  })
-  return client.approveUserOperation({
-    callData,
-    validatorContractVersion: WeightedValidatorContractVersion.V0_0_2_PATCHED,
-  })
-}
 
 // ---------------------------------------------------------------- compliance (mock lists, real rules)
 // Rules live in server/compliance.ts (unit-tested). Production swaps the lists for a screening provider.
@@ -398,5 +348,17 @@ app.get("/compliance/dapps", (_req, res) =>
     },
   ]),
 )
+
+// ---------------------------------------------------------------- demo only
+// "Switch Swissquote off": really stops this process, so the demo can show that the Vault still
+// signs, and still recovers through the independent partner, with no Swissquote at all.
+// Localhost only; restart with `npm run bank`.
+app.post("/demo/shutdown", (req, res) => {
+  const ip = req.socket.remoteAddress ?? ""
+  if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip)) return res.status(403).send("localhost only")
+  console.log("[demo] Swissquote switched OFF - restart with: npm run bank")
+  res.json({ ok: true })
+  setTimeout(() => process.exit(0), 200)
+})
 
 app.listen(PORT)

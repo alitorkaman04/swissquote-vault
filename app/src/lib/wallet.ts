@@ -4,13 +4,14 @@
  * Custody model (see docs/custody-model.md):
  *   - EVERYDAY signer  : the client's passkey (WebAuthn, P-256 key in the phone's secure enclave).
  *                        It is the account's "sudo" validator: it alone can move funds.
- *   - RECOVERY signers : a 2-of-2 weighted validator made of
- *                          (1) the Swissquote guardian key  (weight 50, held by the bank)
- *                          (2) the client's backup key       (weight 50, held by the client)
+ *   - RECOVERY signers : a weighted validator (threshold 100) made of
+ *                          (1) the client's backup key          (weight 60, held offline by the client)
+ *                          (2) the Swissquote guardian key      (weight 40, held by the bank)
+ *                          (3) an independent recovery partner  (weight 40, used if Swissquote is gone)
  *                        bound ON-CHAIN to exactly one action: `doRecovery(validator, data)`,
  *                        i.e. replacing the passkey. It can never transfer assets.
- *   Result: the client alone can transact; the bank alone can do nothing; bank + client backup
- *   together can only re-install a new passkey (after the bank's delay + notification period).
+ *   Result: the client alone can transact; Swissquote alone - or Swissquote + partner (80) - can do
+ *   nothing; the client's backup + one guardian can only re-install a new passkey, after a waiting period.
  */
 import {
   createKernelAccount,
@@ -27,12 +28,10 @@ import {
   toWebAuthnKey,
 } from "@zerodev/passkey-validator"
 import {
-  WeightedValidatorContractVersion,
   createWeightedValidator,
   getRecoveryAction,
   getRecoveryFallbackActionInstallModuleData,
   toECDSASigner,
-  type WeightedValidatorConfig,
 } from "@zerodev/weighted-validator"
 import {
   type Address,
@@ -48,6 +47,7 @@ import {
   parseUnits,
 } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
+import { WEIGHTED_VALIDATOR_VERSION, recoveryConfig } from "./onchainRecovery"
 import {
   CHAIN,
   ENTRY_POINT,
@@ -65,7 +65,7 @@ export const publicClient = createPublicClient({
 })
 
 export const PASSKEY_VALIDATOR_VERSION = PasskeyValidatorContractVersion.V0_0_3_PATCHED
-export const WEIGHTED_VALIDATOR_VERSION = WeightedValidatorContractVersion.V0_0_2_PATCHED
+export { WEIGHTED_VALIDATOR_VERSION, recoveryConfig }
 
 /** What the app keeps in localStorage so the client doesn't re-enrol on every reload. */
 export type WalletSession = {
@@ -75,6 +75,8 @@ export type WalletSession = {
   serializedPasskeyValidator: string
   backupAddress: Address
   bankGuardianAddress: Address
+  /** Independent recovery partner (absent on Vaults created before it existed: legacy 2-of-2). */
+  partnerAddress?: Address
 }
 
 export type Wallet = {
@@ -116,18 +118,6 @@ function paymasterConfig() {
   }
 }
 
-/** The recovery (guardian) validator config: bank 50 + client backup 50, threshold 100. */
-export function recoveryConfig(bankGuardianAddress: Address, backupAddress: Address): WeightedValidatorConfig {
-  return {
-    threshold: 100,
-    signers: [
-      { publicKey: bankGuardianAddress, weight: 50 },
-      { publicKey: backupAddress, weight: 50 },
-    ],
-    delay: 0, // the waiting period is enforced by the Swissquote guardian service (see docs)
-  }
-}
-
 /**
  * Step 1 of the lifecycle: CREATE.
  *  - registers a new passkey on this device (Face ID / Touch ID prompt),
@@ -135,7 +125,7 @@ export function recoveryConfig(bankGuardianAddress: Address, backupAddress: Addr
  *  - derives the smart-account address,
  *  - schedules installation of the recovery validator (bank + backup) on the first transaction.
  */
-export async function createWallet(passkeyName: string, bankGuardianAddress: Address) {
+export async function createWallet(passkeyName: string, bankGuardianAddress: Address, partnerAddress?: Address) {
   const webAuthnKey = await toWebAuthnKey({
     passkeyName,
     passkeyServerUrl: PASSKEY_SERVER_URL,
@@ -158,6 +148,8 @@ export async function createWallet(passkeyName: string, bankGuardianAddress: Add
     bankGuardianAddress,
     backupAddress,
     backupPrivateKey,
+    undefined,
+    partnerAddress,
   )
 
   const session: WalletSession = {
@@ -166,13 +158,19 @@ export async function createWallet(passkeyName: string, bankGuardianAddress: Add
     serializedPasskeyValidator: passkeyValidator.getSerializedData(),
     backupAddress,
     bankGuardianAddress,
+    partnerAddress,
   }
   saveSession(session)
   return { wallet: { session, client } as Wallet, backupPrivateKey }
 }
 
 /** Step 2 of the lifecycle: AUTHENTICATE on a device that already has the passkey. */
-export async function loginWallet(passkeyName: string, bankGuardianAddress: Address, knownAddress?: Address) {
+export async function loginWallet(
+  passkeyName: string,
+  bankGuardianAddress: Address,
+  knownAddress?: Address,
+  onFile?: { backupAddress?: Address; partnerAddress?: Address },
+) {
   const webAuthnKey = await toWebAuthnKey({
     passkeyName,
     passkeyServerUrl: PASSKEY_SERVER_URL,
@@ -186,13 +184,15 @@ export async function loginWallet(passkeyName: string, bankGuardianAddress: Addr
     validatorContractVersion: PASSKEY_VALIDATOR_VERSION,
   })
   const existing = loadSession()
-  const backupAddress = existing?.backupAddress
+  const backupAddress = onFile?.backupAddress ?? existing?.backupAddress
+  const partnerAddress = onFile?.partnerAddress ?? existing?.partnerAddress
   const { client, address } = await buildEverydayClient(
     passkeyValidator,
     bankGuardianAddress,
     backupAddress,
     undefined,
     knownAddress ?? existing?.address,
+    partnerAddress,
   )
   const session: WalletSession = {
     passkeyName,
@@ -200,6 +200,7 @@ export async function loginWallet(passkeyName: string, bankGuardianAddress: Addr
     serializedPasskeyValidator: passkeyValidator.getSerializedData(),
     backupAddress: backupAddress ?? ("0x0000000000000000000000000000000000000000" as Address),
     bankGuardianAddress,
+    partnerAddress,
   }
   saveSession(session)
   return { session, client } as Wallet
@@ -218,6 +219,7 @@ export async function resumeWallet(session: WalletSession): Promise<Wallet> {
     session.backupAddress,
     undefined,
     session.address,
+    session.partnerAddress,
   )
   return { session, client }
 }
@@ -230,6 +232,7 @@ async function buildEverydayClient(
   backupAddress?: Address,
   backupPrivateKey?: Hex,
   knownAddress?: Address,
+  partnerAddress?: Address,
 ) {
   // The recovery validator is installed lazily with the first sudo user operation
   // (ZeroDev "pluginMigrations"). We only need a signer object to build it; at
@@ -245,7 +248,7 @@ async function buildEverydayClient(
       kernelVersion: KERNEL_VERSION,
       validatorContractVersion: WEIGHTED_VALIDATOR_VERSION,
       signer,
-      config: recoveryConfig(bankGuardianAddress, backupAddress),
+      config: recoveryConfig(bankGuardianAddress, backupAddress, partnerAddress),
     })
     pluginMigrations.push(
       await getValidatorPluginInstallModuleData({

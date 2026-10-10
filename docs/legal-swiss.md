@@ -17,10 +17,13 @@ Swiss practice draws the line at **power of disposal**: who can actually or lega
 | Does Swissquote store or manage the key that moves funds? | **No.** The passkey lives in the client's secure enclave; Swissquote never sees it |
 | Is Swissquote's signature required to execute a transaction? | **No.** Transfers are signed by the passkey alone. This is the key difference from a 2-of-3 multisig where the bank co-signs payments |
 | Can Swissquote block or reverse a transaction? | **No.** Compliance checks run before signing in Swissquote's app, but the client's account doesn't need Swissquote to transact |
-| Can Swissquote move funds alone? | **No.** Its guardian key is half of a 2-of-2 recovery key, bound on-chain to `doRecovery` only |
+| Can Swissquote move funds alone? | **No.** Its guardian key has weight 40 of a 100 threshold and is bound on-chain to `doRecovery` only |
+| Can Swissquote move funds **together with a partner**? | **No.** Swissquote 40 + partner 40 = 80 < 100: the validator contract refuses. The client's backup key (60) is required for every recovery |
 | Contractual influence? | Terms must say Swissquote acts as a *recovery guardian on the client's instruction only*, and that it never initiates a recovery |
 
-**Honest grey zone:** the recovery guardian can, *together with the client's backup key*, replace the passkey. Swissquote never holds that backup key, and recovery requires a client-initiated request, identity verification and a waiting period during which the client can veto. Our position is that this is a client-controlled recovery service, not power of disposal. Because FINMA looks at substance, this is the point to confirm with FINMA before launch.
+**The grey zone the challenge names: Swissquote plus a partner.** Many recovery designs (2-of-3 multisig, Shamir 2-of-3 with the bank and a partner) let the bank and a third party together restore or move the assets without the client. That shared control is the grey zone. Vault closes it **on-chain**: the weights (client backup 60, Swissquote 40, partner 40, threshold 100) mean the two institutions together reach only 80. No contract, court order or collusion between them can produce a valid recovery without the client's backup key. So there is no joint power of disposal to argue about.
+
+**What remains:** a guardian can, *together with the client's backup key*, replace the passkey. Swissquote never holds that backup key, and recovery requires a client-initiated request, identity verification and a waiting period during which the client can veto. Our position is that this is a client-controlled recovery service, not power of disposal. Because FINMA looks at substance, this is the point to confirm with FINMA before launch.
 
 ### Why being non-custodial matters even for a bank
 
@@ -40,7 +43,17 @@ Today that means screenshots, test transactions or signed messages for each exte
 2. **Cryptographic proof on demand.** The smart account implements ERC-1271, so the client's passkey can sign a Swissquote challenge message at any time. This is the "signed message" method practitioners cite as acceptable proof of private-key control. [Goldblum, Travel rule Switzerland] **Demo:** Security tab → "Sign ownership proof with passkey": the bank issues a nonce challenge, the passkey signs it, the bank verifies the signature against the wallet address on-chain and records the verification.
 3. **Recovery keeps the link.** After recovery the address does not change, so Swissquote's ownership record stays valid, unlike a client who creates a new MetaMask after losing a seed phrase.
 
-**Travel rule:** transfers between a client's Swissquote account and their own Vault are first-party transfers to a verified wallet. Third-party transfers from the Vault are peer-to-peer, as with any self-hosted wallet. Swissquote's screening in the app is a client-protection service on top, not an obligation it relies on.
+## Travel Rule: when is Swissquote the sending institution?
+
+Switzerland applies the FATF Travel Rule strictly: a supervised institution sending or receiving crypto must transmit or obtain originator and beneficiary information (Art. 10 AMLO-FINMA), and, because there is no counterpart institution for a self-hosted wallet, it may only transact with an **external wallet whose ownership by its own client has been verified** (FINMA Guidance 02/2019). Vault handles the three cases differently:
+
+| Transfer | Is Swissquote the sending (or receiving) institution? | How Vault handles it |
+| --- | --- | --- |
+| Client's Swissquote account → client's own Vault (or back) | **Yes**: Swissquote executes it from its custody | The Vault is a self-hosted wallet of Swissquote's own client, **verified by construction**: created in a KYC'd session, address registered at creation, ERC-1271 ownership proof on demand (Security tab, verified on-chain). The check is automatic: no screenshots or test transactions |
+| Client's Vault → a third party (person or exchange) | **No.** The client signs with their passkey and the transaction leaves the client's own account. Swissquote never holds the assets, has no key that could execute or block the transfer, and transmits nothing on the client's behalf. Paying the gas fee does not make it a party to the value transfer | Peer-to-peer, as with any self-hosted wallet. If the recipient is a VASP, that VASP sees an incoming transfer from a self-hosted wallet and may ask the sender for an ownership proof, which the Vault can sign with the passkey. Swissquote's sanctions screening still runs in the app as a client-protection service |
+| Third party → client's Vault | **No**, Swissquote is not involved | Same as any self-hosted wallet. If the client later moves those funds into their Swissquote account, the first row applies |
+
+**One point to confirm with FINMA:** whether sponsoring gas through a paymaster could be read as "participating" in a third-party transfer. Our reading is no, because the paymaster never holds or forwards client value and cannot change the transfer, but it belongs in the ruling request.
 
 ## Other regulatory points
 
@@ -52,6 +65,15 @@ Today that means screenshots, test transactions or signed messages for each exte
 | **EU clients** | MiCA's custody service covers providers that control client assets. Providers of non-custodial wallet software are outside MiCA's scope (MiCA, recital 83) |
 | **Client information** | Clear risk disclosure: self-custody means the client is responsible for the passkey and backup, and Swissquote cannot reverse transactions |
 
+## If Swissquote stops operating
+
+The challenge asks how clients get their funds back if Swissquote's services are permanently gone. Legally and technically the answer is the same:
+
+- **Nothing to unwind:** the assets were never in Swissquote's custody or bankruptcy estate. They sit in each client's own smart account.
+- **Everyday use continues:** the passkey signs without any Swissquote server. The client pays their own gas, or uses any public paymaster.
+- **Lost phone:** the client recovers with their backup kit and the **independent recovery partner** (60 + 40 = 100), contracted at onboarding. The partner is a separate, regulated Swiss entity (for example a trust company or notary) holding a guardian key in its own HSM and a copy of the client's identification under the client's consent, so it can re-verify identity without Swissquote. Demo: Security → "Switch Swissquote off" stops the mock bank process; the Vault keeps working and recovery goes through the partner.
+- **Contract:** the partner agreement must survive Swissquote's insolvency, i.e. be concluded between the partner and the client (Swissquote only brokers it) and be prepaid for a multi-year term.
+
 ## What the client agreement must say
 
 Because FINMA looks at substance and contracts, not only code, the Vault terms should state:
@@ -61,12 +83,14 @@ Because FINMA looks at substance and contracts, not only code, the Vault terms s
 3. The client is **responsible for the passkey and the backup kit**; loss of both means loss of access, as with any self-custody wallet.
 4. Compliance checks in the app are **client-protection services**, not conditions on the client's ability to use their assets.
 5. Gas sponsorship is a service Swissquote may limit or withdraw; the client can always pay gas themselves.
+6. The **independent recovery partner** acts only on the client's instruction, only with the client's backup key, after its own identity check and waiting period; its contract is with the client and survives Swissquote.
 
 ## What to ask FINMA before launch
 
-1. Confirmation that a recovery guardian bound to a single on-chain function, unable to sign transfers, holding half of a 2-of-2 recovery key, is not power of disposal.
+1. Confirmation that a recovery guardian bound to a single on-chain function, unable to sign transfers, whose key (weight 40) cannot reach the threshold even together with the partner's, is not power of disposal.
 2. Acceptance of creation-in-KYC-session + ERC-1271 signed messages as "suitable technical means" under Guidance 02/2019.
 3. Treatment under the future crypto-institution licence (if adopted) of a bank-operated non-custodial wallet.
+4. Confirmation that Swissquote is not the sending institution for third-party transfers signed by the client from the Vault, including when Swissquote sponsors the gas.
 
 ## Sources
 

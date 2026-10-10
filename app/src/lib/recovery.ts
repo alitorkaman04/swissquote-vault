@@ -3,11 +3,12 @@
  *
  * Scenario: the client's phone is gone. On a new device they:
  *   1. enrol a NEW passkey,
- *   2. log in to their Swissquote account (bank-grade identity check) and request recovery,
- *   3. provide their backup key (from the printed/exported backup kit),
- *   4. the Swissquote guardian service notifies the old device, waits out the delay,
- *      then co-signs if nobody cancelled,
- *   5. the 2-of-2 recovery user operation replaces the passkey on-chain.
+ *   2. log in to their Swissquote account (bank-grade identity check) and request recovery
+ *      - or, if Swissquote is gone, go to the independent recovery partner instead,
+ *   3. provide their backup key (from the printed/exported backup kit), checked against the recovery keys read from the chain,
+ *   4. the guardian (Swissquote or the partner) verifies the backup approval, notifies the
+ *      old device, waits out the delay, then co-signs if nobody cancelled,
+ *   5. the recovery user operation (backup + one guardian = threshold) replaces the passkey on-chain.
  *
  * The recovery validator is bound on-chain to the `doRecovery` action only, so even
  * with both recovery signatures it is impossible to move funds - only to swap the passkey.
@@ -21,11 +22,19 @@ import {
   getRecoveryAction,
   toECDSASigner,
 } from "@zerodev/weighted-validator"
-import { type Address, type Hex, encodeFunctionData, http, parseAbi } from "viem"
+import { type Address, type Hex, concatHex, encodeFunctionData, http, parseAbi } from "viem"
 import { formatUserOperationRequest } from "viem/account-abstraction"
 import { privateKeyToAccount } from "viem/accounts"
 import { CHAIN, ENTRY_POINT, KERNEL_VERSION, PASSKEY_SERVER_URL, ZERODEV_RPC_URL } from "./config"
-import { WEIGHTED_VALIDATOR_VERSION, publicClient, recoveryConfig, saveSession, type WalletSession } from "./wallet"
+import { WEIGHTED_VALIDATOR_VERSION, publicClient, saveSession, type WalletSession } from "./wallet"
+import {
+  WEIGHTED_VALIDATOR_ADDRESS,
+  approvalHash,
+  configFromSetup,
+  readRecoverySetup,
+  weightOf,
+  type RecoverySetup,
+} from "./onchainRecovery"
 import { createZeroDevPaymasterClient } from "@zerodev/sdk"
 
 export const RECOVERY_ABI = parseAbi(["function doRecovery(address _validator, bytes calldata _data)"])
@@ -53,20 +62,45 @@ export async function prepareNewPasskey(newPasskeyName: string) {
   return { validator, callData, serialized: validator.getSerializedData() }
 }
 
-/** Builds a "recovery view" of the account for one of the two guardians. */
-export async function buildRecoveryClient(
-  walletAddress: Address,
-  bankGuardianAddress: Address,
-  backupAddress: Address,
-  signerPrivateKey: Hex,
-) {
+/**
+ * Checks a backup key against the Vault's recovery keys AS STORED ON-CHAIN, before anything
+ * is signed or sent. This is where an attacker with a stolen phone and inbox is refused:
+ * neither holds the backup key, and no other key is accepted by the validator contract.
+ */
+export async function checkBackupKey(walletAddress: Address, backupPrivateKey: string) {
+  // Accept the bare key, the grouped key as printed on the kit, or the whole pasted kit text.
+  const text = backupPrivateKey.trim()
+  const fromKit = text.match(/Backup key\s*:\s*(0x[0-9a-fA-F]{64})/)?.[1]
+  const compact = text.replace(/\s+/g, "").replace(/^0x/i, "")
+  const key = fromKit ?? (/^[0-9a-fA-F]{64}$/.test(compact) ? `0x${compact}` : text)
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    return { ok: false as const, reason: "That doesn’t look like a backup key (0x + 64 hex characters)." }
+  }
+  const setup = await readRecoverySetup(publicClient, walletAddress)
+  if (!setup) {
+    return { ok: false as const, reason: "Recovery isn’t switched on for this Vault yet: it was never activated on-chain." }
+  }
+  const address = privateKeyToAccount(key as Hex).address
+  const weight = weightOf(setup, address)
+  if (weight === 0) {
+    return {
+      ok: false as const,
+      refused: true,
+      reason: `Refused. ${address.slice(0, 8)}… is not one of this Vault’s ${setup.signers.length} recovery keys on Base Sepolia.`,
+    }
+  }
+  return { ok: true as const, setup, address, key: key as Hex }
+}
+
+/** Builds a "recovery view" of the account for one recovery signer, using the on-chain config. */
+export async function buildRecoveryClient(walletAddress: Address, setup: RecoverySetup, signerPrivateKey: Hex) {
   const signer = await toECDSASigner({ signer: privateKeyToAccount(signerPrivateKey) })
   const recoveryValidator = await createWeightedValidator(publicClient, {
     entryPoint: ENTRY_POINT,
     kernelVersion: KERNEL_VERSION,
     validatorContractVersion: WEIGHTED_VALIDATOR_VERSION,
     signer,
-    config: recoveryConfig(bankGuardianAddress, backupAddress),
+    config: configFromSetup(setup),
   })
   const account = await createKernelAccount(publicClient, {
     address: walletAddress,
@@ -87,20 +121,14 @@ export async function buildRecoveryClient(
 }
 
 /** 3. The client signs the recovery with their backup key. */
-export async function approveWithBackupKey(
-  walletAddress: Address,
-  bankGuardianAddress: Address,
-  backupAddress: Address,
-  backupPrivateKey: Hex,
-  callData: Hex,
-) {
-  const client = await buildRecoveryClient(walletAddress, bankGuardianAddress, backupAddress, backupPrivateKey)
+export async function approveWithBackupKey(walletAddress: Address, setup: RecoverySetup, backupPrivateKey: Hex, callData: Hex) {
+  const client = await buildRecoveryClient(walletAddress, setup, backupPrivateKey)
   const signature = await client.approveUserOperation({ callData, validatorContractVersion: WEIGHTED_VALIDATOR_VERSION })
   return { client, signature }
 }
 
 /**
- * 5. Submit the recovery once both approvals are in hand.
+ * 5. Submit the recovery once the backup approval and one guardian approval are in hand.
  *
  * The weighted validator expects: [approval_1, ..., approval_n, final signature over userOpHash].
  * We build that by hand instead of calling `sendUserOperationWithSignatures`, because in
@@ -138,7 +166,7 @@ export async function submitRecovery(
 
 /** After recovery, persist the new passkey session so the new device is the everyday device. */
 export function adoptRecoveredSession(
-  previous: Pick<WalletSession, "address" | "backupAddress" | "bankGuardianAddress">,
+  previous: Pick<WalletSession, "address" | "backupAddress" | "bankGuardianAddress" | "partnerAddress">,
   newPasskeyName: string,
   serializedPasskeyValidator: string,
 ) {
@@ -148,7 +176,22 @@ export function adoptRecoveredSession(
     serializedPasskeyValidator,
     backupAddress: previous.backupAddress,
     bankGuardianAddress: previous.bankGuardianAddress,
+    partnerAddress: previous.partnerAddress,
   }
   saveSession(session)
   return session
+}
+
+/**
+ * DEMO: the best an attacker with a stolen phone and inbox can produce - a well-formed approval
+ * signed by a key they control. Used to show that Swissquote refuses to co-sign it.
+ */
+export async function attackerApproval(attackerKey: Hex, walletAddress: Address, callData: Hex) {
+  const signature = await privateKeyToAccount(attackerKey).signTypedData({
+    domain: { name: "WeightedValidator", version: "0.0.1", chainId: CHAIN.id, verifyingContract: WEIGHTED_VALIDATOR_ADDRESS },
+    types: { Approve: [{ name: "callDataAndNonceHash", type: "bytes32" }] },
+    primaryType: "Approve",
+    message: { callDataAndNonceHash: approvalHash(walletAddress, callData, 0n) },
+  })
+  return concatHex(["0x00", signature])
 }

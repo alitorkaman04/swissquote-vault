@@ -12,14 +12,16 @@ Requirements: Node.js 20+ and a free [ZeroDev](https://dashboard.zerodev.app) pr
 cd app
 cp .env.example .env        # then put your ZeroDev Project ID in VITE_ZERODEV_PROJECT_ID
 npm install
-npm run dev                 # starts the web app (http://localhost:5173) and the mock bank (http://localhost:8787)
+npm run dev                 # starts three processes: the web app (http://localhost:5173),
+                            # the mock Swissquote bank (:8787) and the mock independent recovery partner (:8788)
 ```
 
 Demo login for the mock Swissquote backend: client `demo`, password `demo`, 2FA code `000000`.
 Test USDC for Base Sepolia: https://faucet.circle.com
 
-**Keep `app/server/data.json`.** It holds the mock bank's guardian key: deleting it makes every wallet created so far
-unrecoverable (their on-chain recovery config names that key). To pin the key explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` in `.env`.
+**Keep `app/server/data.json` and `app/server/partner-data.json`.** They hold the two guardian keys (each in its own
+process's storage): deleting one makes every wallet created so far unrecoverable through that guardian (their on-chain
+recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` / `PARTNER_PRIVATE_KEY` in `.env`.
 
 ## Demo script (what the judges see)
 
@@ -32,6 +34,8 @@ unrecoverable (their on-chain recovery config names that key). To pin the key ex
 5. **Apps** → approved dApp list; connecting runs a real on-chain approval; unknown apps are blocked.
 6. **Security → Simulate losing this phone**, then on a *new device* (a private browser window works):
    sign in to Swissquote → "I lost my phone" → new passkey → countdown starts and the **old device sees a cancel banner** → enter backup key → when the delay ends the bank co-signs → passkey replaced on-chain, same address, same funds.
+   - **"Demo: try as a thief with the phone + email"** on the backup-key step: a random key is refused on-chain and Swissquote refuses to co-sign.
+7. **Security → Switch Swissquote off** (dev builds): really stops the mock bank. The Vault keeps signing ("Open my Vault without Swissquote"), and a lost phone is recovered with the backup kit + the independent partner. Restart the bank with `npm run bank`.
 
 ## How it works
 
@@ -41,20 +45,23 @@ unrecoverable (their on-chain recovery config names that key). To pin the key ex
                     │                                                                      │
  phone passkey ───► │  sudo validator: WebAuthn (P-256)        → can do anything           │
                     │                                                                      │
- backup key  ─┐     │  regular validator: Weighted 2-of-2      → bound to ONE selector:    │
- bank key    ─┴───► │    bank 50 + backup 50, threshold 100       doRecovery(validator,data)│
-                    │                                             i.e. replace the passkey  │
+ backup key  ─┐     │  regular validator: Weighted             → bound to ONE selector:    │
+ bank key    ─┼───► │    backup 60 + bank 40 + partner 40,        doRecovery(validator,data)│
+ partner key ─┘     │    threshold 100 (bank + partner = 80 ✗)   i.e. replace the passkey  │
                     └──────────────────────────────────────────────────────────────────────┘
                                       ▲ user operations, gas sponsored by paymaster
                                       │
    web app (this repo) ───────────────┘
         │
-        └── mock Swissquote backend (server/): identity, guardian key, delay + veto, screening, dApp list
+        ├── mock Swissquote backend (server/index.ts, process 1): identity, guardian key, delay + veto, screening, dApp list
+        └── mock independent partner  (server/partner.ts, process 2): its own guardian key, ID check, longer delay
 ```
 
 - `src/lib/wallet.ts` — create / login / resume, balances, gasless transfers
-- `src/lib/recovery.ts` — new passkey → 2-of-2 recovery user operation
-- `src/lib/bank.ts` — client for the mock backend
-- `server/index.ts` — the mock backend (clearly marked; see `docs/mocks.md`)
+- `src/lib/onchainRecovery.ts` — the recovery rules: weights, reading the Vault's recovery keys from the chain, verifying approvals
+- `src/lib/recovery.ts` — new passkey → backup-key check → recovery user operation
+- `src/lib/bank.ts`, `src/lib/partner.ts` — clients for the two mock services
+- `server/index.ts`, `server/partner.ts` — the two mock services (clearly marked; see `docs/mocks.md`)
+- `server/guardian.ts` — what both guardians check on-chain before co-signing
 
 Built with `@zerodev/sdk`, `@zerodev/passkey-validator`, `@zerodev/weighted-validator`, `viem`. No custom cryptography.

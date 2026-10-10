@@ -17,10 +17,14 @@ Before freezing the code we ran a review of the repo from the point of view of a
 | 10 | `POST /wallet` lets a session overwrite its wallet record | Low (mock) | **Accepted** for demo re-runs; production links a wallet only after an ownership proof |
 | 11 | Backup key displayed raw in the browser | Low (demo) | **Accepted**; production uses a printed kit or a second passkey (`roadmap.md`) |
 | 12 | Veto errors were swallowed silently | Low (UX) | **Fixed** |
+| 13 | If Swissquote disappeared **and** the phone was lost, the 2-of-2 left the client locked out | High (requirement gap) | **Fixed.** Independent recovery partner (separate process, own key): backup 60 + Swissquote 40 + partner 40, threshold 100 |
+| 14 | The bank co-signed after the delay without checking that the client's backup key had approved, so a stolen inbox + reset password got a co-signature (useless on-chain, but a needless step) | Medium | **Fixed.** Both guardians verify the backup approval against the Vault's on-chain recovery keys before co-signing, and refuse if the approval plus their own weight doesn't reach the threshold |
+| 15 | The app trusted locally stored recovery addresses | Low | **Fixed.** Recovery reads the Vault's real recovery keys from the chain |
+| 16 | Docs claimed the validator's on-chain `delay` could enforce the waiting period; with offline signature collection it only supports `delay = 0` | Low (accuracy) | **Fixed.** Docs now name the production path (ZeroDev `WeightedECDSAValidator`: on-chain approvals, timer, veto) |
 
 ## What a reviewer should still know
 
 - Compliance checks run in the app and the bank service, not on-chain. This is deliberate for self-custody; see `architecture.md`, "Known limitations".
-- The 30-second recovery delay is enforced by the guardian service in the prototype. Production also sets the weighted validator's on-chain `delay`.
+- The recovery delays (30 s Swissquote, 45 s partner) are enforced by the guardian services in the prototype. Production enforces them on-chain as well (see `custody-model.md`).
 - Everything on-chain is audited ZeroDev code (Kernel v3.1, passkey validator, weighted validator, recovery action); we wrote no Solidity.
-- Unit tests cover the compliance rules and helpers; CI runs type-check, tests and build on every push.
+- Unit tests cover the compliance rules, the recovery weights (Swissquote + partner can never recover; no single key can) and approval verification; CI runs type-check, tests and build on every push.

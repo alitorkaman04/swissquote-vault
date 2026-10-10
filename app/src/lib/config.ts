@@ -42,6 +42,9 @@ export const EXPLORER_ADDRESS = (addr: string) => `https://sepolia.basescan.org/
 /** Mock Swissquote backend (guardian service). See server/ and docs/mocks.md */
 export const BANK_API_URL = (import.meta.env.VITE_BANK_API_URL as string | undefined) ?? "http://localhost:8787"
 
+/** Mock independent recovery partner: a SEPARATE process with its own key (server/partner.ts). */
+export const PARTNER_API_URL = (import.meta.env.VITE_PARTNER_API_URL as string | undefined) ?? "http://localhost:8788"
+
 /**
  * Recovery delay enforced by the Swissquote guardian service before it co-signs a recovery.
  * Production: 48 hours. Demo: a few seconds so judges can watch the whole flow.

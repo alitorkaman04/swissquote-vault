@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import type { Address } from "viem"
-import { bank, type BankSession } from "./lib/bank"
+import { Unreachable, bank, type BankSession } from "./lib/bank"
+import { partner } from "./lib/partner"
 import {
   createWallet,
   loadSession,
@@ -13,14 +14,20 @@ import { Alert, Button, Field, Icon, errorMessage, uniquePasskeyName } from "./u
 import { Dashboard } from "./screens/Dashboard"
 import { Recover } from "./screens/Recover"
 import { BackupKit } from "./screens/BackupKit"
+import { PartnerRecover } from "./screens/PartnerRecover"
 
 type Screen =
   | { name: "boot" }
   | { name: "bank-login" }
   | { name: "onboard"; existing: { walletAddress: Address; passkeyName: string } | null }
   | { name: "backup-kit"; backupPrivateKey: `0x${string}` }
-  | { name: "home" }
-  | { name: "recover"; existing: { walletAddress: Address; backupAddress: Address; passkeyName: string } }
+  | { name: "home"; offline?: boolean }
+  | { name: "recover"; existing: { walletAddress: Address; passkeyName: string } }
+  | { name: "swissquote-down" }
+  | { name: "partner-recover"; knownAddress?: Address }
+
+/** Stand-in session when Swissquote can't be reached: the Vault keeps working without it. */
+const OFFLINE_SESSION: BankSession = { clientId: "offline", name: "Swissquote unreachable", token: "" }
 
 const BANK_SESSION_KEY = "swissquote-vault:bank-session"
 
@@ -62,7 +69,9 @@ export default function App() {
           setScreen({ name: "onboard", existing: null })
         }
       } catch (e) {
-        if (!cancelled) setError(errorMessage(e))
+        if (cancelled) return
+        if (e instanceof Unreachable) setScreen({ name: "swissquote-down" })
+        else setError(errorMessage(e))
       }
     })()
     return () => {
@@ -129,6 +138,36 @@ export default function App() {
             sessionStorage.setItem(BANK_SESSION_KEY, JSON.stringify(s))
             setBankSession(s)
           }}
+          onUnreachable={() => setScreen({ name: "swissquote-down" })}
+        />
+      )}
+
+      {!error && screen.name === "swissquote-down" && (
+        <SwissquoteDown
+          hasLocalVault={!!loadSession()}
+          onOpen={async () => {
+            const local = loadSession()
+            if (!local) return
+            setWallet(await resumeWallet(local))
+            setScreen({ name: "home", offline: true })
+          }}
+          onPartnerRecover={() => setScreen({ name: "partner-recover", knownAddress: loadSession()?.address })}
+          onRetry={() => {
+            setScreen({ name: "boot" })
+            setBankSession((s) => (s ? { ...s } : null))
+            if (!bankSession) setScreen({ name: "bank-login" })
+          }}
+        />
+      )}
+
+      {!error && screen.name === "partner-recover" && (
+        <PartnerRecover
+          knownAddress={screen.knownAddress}
+          onRecovered={async (session: WalletSession) => {
+            setWallet(await resumeWallet(session))
+            setScreen({ name: "home", offline: true })
+          }}
+          onBack={() => setScreen({ name: "swissquote-down" })}
         />
       )}
 
@@ -153,15 +192,21 @@ export default function App() {
         <BackupKit wallet={wallet} backupPrivateKey={screen.backupPrivateKey} onDone={() => setScreen({ name: "home" })} />
       )}
 
-      {!error && screen.name === "home" && wallet && bankSession && (
+      {!error && screen.name === "home" && wallet && (bankSession || screen.offline) && (
         <Dashboard
           wallet={wallet}
-          bankSession={bankSession}
+          bankSession={screen.offline ? OFFLINE_SESSION : bankSession!}
+          offline={screen.offline}
+          onSwissquoteDown={() => setScreen({ name: "swissquote-down" })}
           onLostDevice={() => {
             // Simulates losing the phone: this device forgets the wallet session.
             // (The passkey itself still exists in the OS; use a private window for a true "new device".)
             localStorage.removeItem("swissquote-vault:session")
             setWallet(null)
+            if (screen.offline) {
+              setScreen({ name: "partner-recover", knownAddress: wallet.session.address })
+              return
+            }
             setScreen({
               name: "onboard",
               existing: { walletAddress: wallet.session.address, passkeyName: wallet.session.passkeyName },
@@ -213,8 +258,16 @@ export function StageAside() {
         </div>
         <div className="legend-row">
           <span className="ico"><Icon name="bank" /></span>
-          <div><b>Swissquote guardian</b>Recovery only, after identity check and a waiting period the client can veto.</div>
+          <div><b>Swissquote guardian</b>Recovery only, with the backup key, after an identity check and a waiting period the client can veto.</div>
         </div>
+        <div className="legend-row">
+          <span className="ico"><Icon name="partner" /></span>
+          <div><b>Independent partner</b>The way back in if Swissquote is ever gone. Swissquote + partner can never act without the client.</div>
+        </div>
+      </div>
+      <div className="realmock">
+        <div><b>Real, on Base Sepolia</b>Passkeys · smart account · recovery rules · gasless transactions · simulation</div>
+        <div><b><span className="mock-tag">MOCK</span> labelled in the app</b>Bank login & 2FA · guardian HSMs · partner’s ID check · sanctions list</div>
       </div>
       <div className="meta">
         <span className="pill dot ok">Live on Base Sepolia</span>
@@ -227,7 +280,7 @@ export function StageAside() {
 
 // ---------------------------------------------------------------------------
 
-export function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void }) {
+export function BankLogin({ onLoggedIn, onUnreachable }: { onLoggedIn: (s: BankSession) => void; onUnreachable?: () => void }) {
   const [clientId, setClientId] = useState("demo")
   const [password, setPassword] = useState("demo")
   const [otp, setOtp] = useState("000000")
@@ -240,6 +293,7 @@ export function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void
     try {
       onLoggedIn(await bank.login(clientId.trim(), password, otp))
     } catch (e) {
+      if (e instanceof Unreachable && onUnreachable) return onUnreachable()
       setErr(errorMessage(e))
     } finally {
       setBusy(false)
@@ -265,13 +319,18 @@ export function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void
       <div className="demo-note">
         <Icon name="info" size={16} />
         <span>
-          Demo bank: any client number, password <code>demo</code>, code <code>000000</code>
+          <span className="mock-tag">MOCK</span> Demo bank: any client number, password <code>demo</code>, code <code>000000</code>
         </span>
       </div>
       {err && <Alert kind="bad">{err}</Alert>}
       <Button type="submit" variant="primary" busy={busy} block>
         Sign in
       </Button>
+      {onUnreachable && (
+        <button type="button" className="link-btn" onClick={onUnreachable}>
+          Swissquote unreachable? Your Vault still works
+        </button>
+      )}
       <div className="footer-note">
         <Icon name="lock" size={14} /> Identity and 2FA are simulated in this prototype
       </div>
@@ -294,7 +353,7 @@ export function Onboard({
   existing: { walletAddress: Address; passkeyName: string } | null
   onCreated: (w: Wallet, backupPrivateKey: `0x${string}`) => void
   onLoggedIn: (w: Wallet) => void
-  onRecover: (e: { walletAddress: Address; backupAddress: Address; passkeyName: string }) => void
+  onRecover: (e: { walletAddress: Address; passkeyName: string }) => void
 }) {
   const [busy, setBusy] = useState<"create" | "login" | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -305,12 +364,18 @@ export function Onboard({
     setBusy("create")
     setErr(null)
     try {
-      const { wallet, backupPrivateKey } = await createWallet(passkeyName.trim(), guardian)
+      // The independent recovery partner: a separate service with its own key (see docs/custody-model.md).
+      const partnerInfo = await partner.guardian().catch(() => {
+        throw new Error("The independent recovery partner isn’t reachable. Start all services with npm run dev.")
+      })
+      const { wallet, backupPrivateKey } = await createWallet(passkeyName.trim(), guardian, partnerInfo.address)
       await bank.registerWallet(bankSession.token, {
         walletAddress: wallet.session.address,
         backupAddress: wallet.session.backupAddress,
+        partnerAddress: partnerInfo.address,
         passkeyName: wallet.session.passkeyName,
       })
+      await partner.register(wallet.session.address, bankSession.clientId)
       onCreated(wallet, backupPrivateKey)
     } catch (e) {
       setErr(errorMessage(e))
@@ -324,13 +389,12 @@ export function Onboard({
     setBusy("login")
     setErr(null)
     try {
-      const w = await loginWallet(existing.passkeyName, guardian, existing.walletAddress)
-      // Make sure we carry the backup address the bank has on file.
+      // Carry the recovery addresses the bank has on file (public addresses only).
       const onFile = await bank.getWallet(bankSession.token)
-      if (onFile) {
-        w.session.backupAddress = onFile.backupAddress
-        localStorage.setItem("swissquote-vault:session", JSON.stringify(w.session))
-      }
+      const w = await loginWallet(existing.passkeyName, guardian, existing.walletAddress, {
+        backupAddress: onFile?.backupAddress,
+        partnerAddress: onFile?.partnerAddress ?? undefined,
+      })
       onLoggedIn(w)
     } catch (e) {
       setErr(errorMessage(e))
@@ -342,7 +406,7 @@ export function Onboard({
   async function recover() {
     const onFile = await bank.getWallet(bankSession.token)
     if (!onFile) return
-    onRecover({ walletAddress: onFile.walletAddress, backupAddress: onFile.backupAddress, passkeyName: onFile.passkeyName })
+    onRecover({ walletAddress: onFile.walletAddress, passkeyName: onFile.passkeyName })
   }
 
   if (existing) {
@@ -389,7 +453,7 @@ export function Onboard({
         </div>
         <div className="feature">
           <span className="ico"><Icon name="key" /></span>
-          <div><b>A backup only you hold</b><span>Lose the phone? Backup key + Swissquote login restore access.</span></div>
+          <div><b>A backup only you hold</b><span>Lose the phone? Backup key + Swissquote login restore access — even if Swissquote is ever gone.</span></div>
         </div>
         <div className="feature">
           <span className="ico"><Icon name="fuel" /></span>
@@ -409,6 +473,77 @@ export function Onboard({
           <Icon name="lock" size={14} /> Swissquote never sees your passkey or your backup key
         </div>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/** Shown when Swissquote can't be reached. Self-custody means the Vault doesn't depend on it. */
+export function SwissquoteDown({
+  hasLocalVault,
+  onOpen,
+  onPartnerRecover,
+  onRetry,
+}: {
+  hasLocalVault: boolean
+  onOpen: () => Promise<void>
+  onPartnerRecover: () => void
+  onRetry: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  return (
+    <div className="screen">
+      <div className="title">
+        <span className="ico lg" style={{ background: "var(--warn-bg)", color: "var(--warn)" }}>
+          <Icon name="power" size={26} />
+        </span>
+        <h1>Swissquote is unreachable</h1>
+        <p>Your Vault doesn’t depend on it. Your funds sit in your own account on the blockchain, and your passkey still signs.</p>
+      </div>
+      {hasLocalVault && (
+        <Button
+          variant="primary"
+          icon="faceid"
+          busy={busy}
+          block
+          onClick={async () => {
+            setBusy(true)
+            setErr(null)
+            try {
+              await onOpen()
+            } catch (e) {
+              setErr(errorMessage(e))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          Open my Vault without Swissquote
+        </Button>
+      )}
+      <Button variant={hasLocalVault ? "ghost" : "primary"} icon="partner" onClick={onPartnerRecover} block>
+        Lost your phone? Recover with the partner
+      </Button>
+      {err && <Alert kind="bad">{err}</Alert>}
+      <div className="checks">
+        <div className="c">
+          <span className="pass"><Icon name="check" size={18} stroke={2.2} /></span>
+          <span>Sign and send<span className="d">Your passkey works with any ERC-4337 bundler; no Swissquote server is involved.</span></span>
+        </div>
+        <div className="c">
+          <span className="pass"><Icon name="check" size={18} stroke={2.2} /></span>
+          <span>Recover a lost phone<span className="d">Backup key + the independent partner reach the on-chain threshold.</span></span>
+        </div>
+        <div className="c">
+          <span className="have"><Icon name="alert" size={18} /></span>
+          <span>What you lose<span className="d">Swissquote’s screening, limits and dApp list; in production also the gas sponsorship (the Vault then pays its own fees).</span></span>
+        </div>
+      </div>
+      <Button variant="quiet" onClick={onRetry} block>
+        Try Swissquote again
+      </Button>
     </div>
   )
 }

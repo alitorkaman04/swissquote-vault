@@ -4,3 +4,4 @@ dist
 server/data.json
 *.local
 .DS_Store
+server/partner-data.json

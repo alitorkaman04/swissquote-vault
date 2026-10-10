@@ -31,6 +31,7 @@ Base inputs from Swissquote's reports; **everything else is a labelled assumptio
 | Vault adoption among crypto clients | 5% year 1, 15% year 3 | **Assumption** |
 | User operations per Vault user | 24 / yr | **Assumption** |
 | Gas per user operation on an L2 | ≈ USD 0.03 | **Assumption** (L2 fees vary) |
+| Independent recovery partner fee | CHF 5 per Vault per year, paid by Swissquote | **Assumption** (key custody in an HSM + rare video identifications) |
 
 | | Year 1 | Year 3 |
 | --- | ---: | ---: |
@@ -42,12 +43,13 @@ Base inputs from Swissquote's reports; **everything else is a labelled assumptio
 | Gas sponsorship | CHF 3,900 | CHF 11,600 |
 | Account-abstraction infrastructure (bundler, paymaster, passkey server) | CHF 60,000 | CHF 60,000 |
 | Guardian service (HSM, ops, recovery support) | CHF 250,000 | CHF 250,000 |
-| **Running cost** | **CHF 0.31 m** | **CHF 0.32 m** |
-| **Contribution** | **CHF 1.31 m** | **CHF 5.15 m** |
+| Independent recovery partner | CHF 30,500 | CHF 91,600 |
+| **Running cost** | **CHF 0.34 m** | **CHF 0.41 m** |
+| **Contribution** | **CHF 1.28 m** | **CHF 5.06 m** |
 
 One-off build (6 people × 9 months) estimated at about CHF 1.5 m, paid back in a little over a year at year-1 contribution.
 
-**Gas is not the cost driver**: sponsoring every transaction costs under CHF 1 per user per year on an L2. The real costs are people and the guardian service.
+**Gas is not the cost driver**: sponsoring every transaction costs under CHF 1 per user per year on an L2. The real costs are people and the guardian service. The independent partner, which lets clients recover even if Swissquote is gone, costs about CHF 5 per Vault per year and is also a selling point: "your access doesn't depend on us".
 
 ## Lower operating cost and risk than custody
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { type Address, encodeFunctionData, erc20Abi, isAddress, parseUnits } from "viem"
-import { bank, type ApprovedDapp, type BankSession, type RecoveryRequest, type ScreeningResult } from "../lib/bank"
+import { Unreachable, bank, type ApprovedDapp, type BankSession, type ScreeningResult } from "../lib/bank"
+import { partner } from "../lib/partner"
 import { EXPLORER_ADDRESS, EXPLORER_TX, HIGH_VALUE_THRESHOLD_USDC, USDC_ADDRESS, USDC_DECIMALS } from "../lib/config"
 import { getBalances, getUsdcAllowance, isDeployed, publicClient, revokeUsdcAllowance, sendCalls, sendUsdc, signMessageWithPasskey, type Wallet } from "../lib/wallet"
 import QRCode from "qrcode"
@@ -23,11 +24,27 @@ import { appendActivity, readActivity, type Activity } from "../lib/activity"
 
 type Tab = "send" | "receive" | "dapps" | "security"
 
+/** A recovery in progress against this Vault, at Swissquote or at the independent partner. */
+type PendingRecovery = { id: string; createdAt: number; via: "swissquote" | "partner" }
+
 /** Demo shortcuts so nobody has to type an address live. */
 const DEMO_RECIPIENT = "0x8422b6a2b2c7475ccf318575117A690b18e4b0C6"
 const DEMO_SANCTIONED = "0x000000000000000000000000000000000000bad1"
 
-export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankSession: BankSession; onLostDevice: () => void }) {
+export function Dashboard({
+  wallet,
+  bankSession,
+  onLostDevice,
+  offline = false,
+  onSwissquoteDown,
+}: {
+  wallet: Wallet
+  bankSession: BankSession
+  onLostDevice: () => void
+  /** Swissquote unreachable: the Vault keeps working on its own. */
+  offline?: boolean
+  onSwissquoteDown?: () => void
+}) {
   const { address } = wallet.session
   const [tab, setTab] = useState<Tab>("send")
   const [vetoBusy, setVetoBusy] = useState(false)
@@ -35,7 +52,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   const [balances, setBalances] = useState<{ usdc: string; eth: string } | null>(null)
   const [deployed, setDeployed] = useState<boolean | null>(null)
   const [activity, setActivity] = useState<Activity[]>(() => readActivity(wallet.session.address))
-  const [pendingRecovery, setPendingRecovery] = useState<RecoveryRequest | null>(null)
+  const [pendingRecovery, setPendingRecovery] = useState<PendingRecovery | null>(null)
   const [copied, setCopied] = useState(false)
   const [replaced, setReplaced] = useState(false)
   const [, setTick] = useState(0)
@@ -62,7 +79,15 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   // and notices when a completed recovery has replaced its passkey.
   useEffect(() => {
     const poll = () => {
-      bank.pendingForWallet(address).then(setPendingRecovery).catch(() => {})
+      // Both guardians are watched: a recovery can be started at Swissquote or at the independent partner.
+      Promise.allSettled([offline ? Promise.resolve(null) : bank.pendingForWallet(address), partner.pendingForWallet(address)]).then(
+        ([b, p]) => {
+          const viaBank = b.status === "fulfilled" && b.value ? { id: b.value.id, createdAt: b.value.createdAt, via: "swissquote" as const } : null
+          const viaPartner = p.status === "fulfilled" && p.value ? { id: p.value.id, createdAt: p.value.createdAt, via: "partner" as const } : null
+          setPendingRecovery(viaBank ?? viaPartner)
+        },
+      )
+      if (offline) return
       bank
         .getWallet(bankSession.token)
         .then((onFile) => {
@@ -74,17 +99,25 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     poll()
     const t = setInterval(poll, 4000)
     return () => clearInterval(t)
-  }, [address, bankSession.token, wallet.session.passkeyName])
+  }, [address, bankSession.token, wallet.session.passkeyName, offline])
 
   function addActivity(a: Activity) {
     setActivity(appendActivity(address, a))
   }
 
-  async function veto(req: RecoveryRequest) {
+  async function veto(req: PendingRecovery) {
     setVetoBusy(true)
     try {
       // Strong veto: this device proves it still holds the passkey by signing the veto (ERC-1271).
       const message = bank.cancelMessage(req.id)
+      if (req.via === "partner") {
+        // The partner accepts only a veto signed by the Vault's current passkey.
+        await partner.cancelRecovery(req.id, message, await signMessageWithPasskey(wallet, message))
+        setVetoNote("Recovery cancelled — veto signed with this phone’s passkey.")
+        setPendingRecovery(null)
+        setTimeout(() => setVetoNote(null), 8000)
+        return
+      }
       let signature: `0x${string}` | undefined
       try {
         signature = await signMessageWithPasskey(wallet, message)
@@ -143,6 +176,15 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
 
   return (
     <div className="screen">
+      {offline && (
+        <div className="offline-strip" role="status">
+          <Icon name="power" size={18} />
+          <span>
+            <b>Swissquote unreachable.</b> Your Vault works on its own: your passkey signs, recovery goes through the
+            independent partner. Swissquote’s checks are off.
+          </span>
+        </div>
+      )}
       {pendingRecovery && (
         <div className="banner" role="alert">
           <div className="head">
@@ -150,8 +192,10 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
             Someone is recovering this Vault
           </div>
           <span style={{ fontSize: 14, lineHeight: 1.45 }}>
-            A new device requested recovery at {new Date(pendingRecovery.createdAt).toLocaleTimeString()}. If that isn’t
-            you, stop it now — nothing happens until the waiting period ends.
+            A new device requested recovery
+            {pendingRecovery.via === "partner" ? " through the independent recovery partner" : ""} at{" "}
+            {new Date(pendingRecovery.createdAt).toLocaleTimeString()}. If that isn’t you, stop it now — nothing happens
+            until the waiting period ends.
           </span>
           <Button variant="danger" icon="faceid" busy={vetoBusy} onClick={() => veto(pendingRecovery)} block>
             That’s not me — cancel recovery
@@ -214,23 +258,28 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
       <button className="protect" onClick={() => setTab("security")}>
         <Icon name="shieldCheck" size={20} />
         <span>
-          <b>Protected</b> · passkey + 2-of-2 recovery
+          <b>Protected</b> · {wallet.session.partnerAddress ? "passkey + backup with Swissquote or partner" : "passkey + 2-of-2 recovery"}
         </span>
         <span className="keys3" aria-hidden="true">
           <span><Icon name="phone" size={13} /></span>
           <span><Icon name="key" size={13} /></span>
           <span><Icon name="bank" size={13} /></span>
+          {wallet.session.partnerAddress && <span><Icon name="partner" size={13} /></span>}
         </span>
       </button>
 
-      {tab === "send" && <Send wallet={wallet} bankSession={bankSession} onSent={(a) => { addActivity(a); refresh() }} balance={balances?.usdc} />}
+      {tab === "send" && (
+        <Send wallet={wallet} bankSession={bankSession} offline={offline} onSent={(a) => { addActivity(a); refresh() }} balance={balances?.usdc} />
+      )}
       {tab === "receive" && <Receive address={address} />}
       {tab === "dapps" && <Dapps wallet={wallet} onSent={(a) => { addActivity(a); refresh() }} />}
       {tab === "security" && (
         <Security
           wallet={wallet}
           bankSession={bankSession}
+          offline={offline}
           onLostDevice={onLostDevice}
+          onSwissquoteDown={onSwissquoteDown}
           onEvent={(label) => addActivity({ at: Date.now(), label, txHash: "" })}
         />
       )}
@@ -295,7 +344,20 @@ function activityTone(label: string) {
 // Send USDC: screen -> simulate -> sign with passkey -> sent (gas paid by Swissquote)
 // ---------------------------------------------------------------------------
 
-function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSession: BankSession; onSent: (a: Activity) => void; balance?: string }) {
+function Send({
+  wallet,
+  bankSession,
+  onSent,
+  balance,
+  offline: startOffline = false,
+}: {
+  wallet: Wallet
+  bankSession: BankSession
+  onSent: (a: Activity) => void
+  balance?: string
+  offline?: boolean
+}) {
+  const [offline, setOffline] = useState(startOffline)
   const [otp, setOtp] = useState("")
   const [steppedUp, setSteppedUp] = useState(false)
   const [stepBusy, setStepBusy] = useState(false)
@@ -314,10 +376,18 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
     if (!(Number(amount) > 0)) return setErr("Enter an amount.")
     setBusy(true)
     try {
-      const [s, sim] = await Promise.all([
-        bank.screen({ from: wallet.session.address, to: to as Address, amountUsdc: amount }),
-        simulateTransfer(wallet.session.address, to as Address, amount),
-      ])
+      // Swissquote's screening is a service on top of self-custody: if Swissquote is unreachable the
+      // client can still sign (and is told the checks are off). The simulation runs on the public chain.
+      const screen = offline
+        ? Promise.resolve(null)
+        : bank.screen({ from: wallet.session.address, to: to as Address, amountUsdc: amount }).catch((e) => {
+            if (e instanceof Unreachable) {
+              setOffline(true)
+              return null
+            }
+            throw e
+          })
+      const [s, sim] = await Promise.all([screen, simulateTransfer(wallet.session.address, to as Address, amount)])
       setScreening(s)
       setSimulation(sim)
       setStage("review")
@@ -360,7 +430,8 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
           <h3>Sent {formatAmount(amount)} USDC</h3>
           <p className="muted">to {short(to, 8)}</p>
           <span className="pill ok">
-            <Icon name="fuel" size={14} /> Fee {result.gas ? `${result.gas} ` : ""}paid by Swissquote
+            <Icon name="fuel" size={14} /> Fee {result.gas ? `${result.gas} ` : ""}
+            {offline ? "sponsored (demo)" : "paid by Swissquote"}
           </span>
         </div>
         <a className="btn ghost block" href={EXPLORER_TX(result.txHash)} target="_blank" rel="noreferrer">
@@ -393,7 +464,10 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
           </div>
         </div>
         <div className="list kv">
-          <div className="item"><span>Network fee</span><span className="right pill ok"><Icon name="fuel" size={13} /> Paid by Swissquote</span></div>
+          <div className="item">
+            <span>Network fee</span>
+            <span className="right pill ok"><Icon name="fuel" size={13} /> {offline ? "Sponsored in this demo" : "Paid by Swissquote"}</span>
+          </div>
           <div className="item"><span>Balance after</span><span className="right" style={after !== null && after < 0 ? { color: "var(--bad)" } : undefined}>{after !== null ? formatAmount(after) : "—"} USDC</span></div>
         </div>
         {screening && (
@@ -422,6 +496,31 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
               </div>
             )}
           </div>
+        )}
+        {offline && (
+          <Alert kind="warn">
+            <b>Swissquote is unreachable — its checks are off</b>
+            <span>
+              Self-custody means you can still sign. No sanctions screening or limits: you are responsible for this transfer.
+              The simulation above still ran on the public network.
+            </span>
+          </Alert>
+        )}
+        {!screening && simulation && (
+          <div className="checks">
+            <div className="c">
+              <span className={simulation.ok ? "pass" : "fail"}><Icon name={simulation.ok ? "check" : "x"} size={18} stroke={2.2} /></span>
+              <span>
+                Transaction simulation
+                <span className="d">{simulation.detail}</span>
+              </span>
+            </div>
+          </div>
+        )}
+        {screening && (
+          <p className="hint">
+            <span className="mock-tag">MOCK</span> Sanctions list and limits are demo data; the simulation runs on the real network.
+          </p>
         )}
         {screening?.decision === "block" && <Alert kind="bad"><b>Blocked.</b><span>{screening.reasons.join("; ")}.</span></Alert>}
         {screening?.decision === "review" && !steppedUp && (
@@ -746,15 +845,20 @@ function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => vo
 function Security({
   wallet,
   bankSession,
+  offline,
   onLostDevice,
+  onSwissquoteDown,
   onEvent,
 }: {
   wallet: Wallet
   bankSession: BankSession
+  offline: boolean
   onLostDevice: () => void
+  onSwissquoteDown?: () => void
   onEvent: (label: string) => void
 }) {
   const s = wallet.session
+  const [shutdownErr, alertShutdown] = useState<string | null>(null)
   const [proof, setProof] = useState<{ state: "idle" | "busy" | "ok" | "fail"; detail?: string }>({ state: "idle" })
 
   async function proveOwnership() {
@@ -794,37 +898,49 @@ function Security({
               <span className="ico"><Icon name="key" size={18} /></span>
               <div><div className="name">Your backup key</div><div className="sub mono">{short(s.backupAddress, 6)}</div></div>
             </div>
-            <span className="pill">Recovery only</span>
+            <span className="pill">{s.partnerAddress ? "Recovery · 60" : "Recovery only"}</span>
           </div>
           <div className="item">
             <div className="left">
               <span className="ico"><Icon name="bank" size={18} /></span>
               <div><div className="name">Swissquote guardian</div><div className="sub mono">{short(s.bankGuardianAddress, 6)}</div></div>
             </div>
-            <span className="pill">Recovery only</span>
+            <span className="pill">{s.partnerAddress ? "Recovery · 40" : "Recovery only"}</span>
           </div>
+          {s.partnerAddress && (
+            <div className="item">
+              <div className="left">
+                <span className="ico"><Icon name="partner" size={18} /></span>
+                <div><div className="name">Independent partner</div><div className="sub"><span className="mono">{short(s.partnerAddress, 6)}</span> · if Swissquote is gone</div></div>
+              </div>
+              <span className="pill">Recovery · 40</span>
+            </div>
+          )}
         </div>
         <p className="muted">
-          The recovery pair is bound on-chain to one function: replacing your passkey. It can’t send tokens, and every
-          recovery waits out a delay during which this phone is alerted and can cancel it.
+          {s.partnerAddress
+            ? "Recovery needs 100 points: your backup key (60) plus Swissquote or the partner (40). Swissquote and the partner together reach only 80, so they can never act without you. Recovery can only replace your passkey — never send tokens — and this phone is alerted and can cancel it."
+            : "The recovery pair is bound on-chain to one function: replacing your passkey. It can’t send tokens, and every recovery waits out a delay during which this phone is alerted and can cancel it."}
         </p>
       </section>
 
-      <section className="card">
-        <div className="card-head">
-          <h2>Prove ownership to Swissquote</h2>
-          <span className="pill">{bankSession.clientId} · KYC</span>
-        </div>
-        <p className="muted">
-          Swiss rules require the bank to verify that an external wallet belongs to its client. One tap: Swissquote sends a
-          challenge, your passkey signs it, and the bank checks the signature on-chain.
-        </p>
-        {proof.state === "ok" && <Alert kind="ok"><b>Ownership verified</b><span>{proof.detail}</span></Alert>}
-        {proof.state === "fail" && <Alert kind="bad">{proof.detail}</Alert>}
-        <Button variant="primary" icon="faceid" busy={proof.state === "busy"} onClick={proveOwnership} block>
-          Sign ownership proof
-        </Button>
-      </section>
+      {!offline && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Prove ownership to Swissquote</h2>
+            <span className="pill">{bankSession.clientId} · KYC</span>
+          </div>
+          <p className="muted">
+            Swiss rules require the bank to verify that an external wallet belongs to its client. One tap: Swissquote sends a
+            challenge, your passkey signs it, and the bank checks the signature on-chain.
+          </p>
+          {proof.state === "ok" && <Alert kind="ok"><b>Ownership verified</b><span>{proof.detail}</span></Alert>}
+          {proof.state === "fail" && <Alert kind="bad">{proof.detail}</Alert>}
+          <Button variant="primary" icon="faceid" busy={proof.state === "busy"} onClick={proveOwnership} block>
+            Sign ownership proof
+          </Button>
+        </section>
+      )}
 
       <section className="card flat">
         <h2>Lost your phone?</h2>
@@ -836,6 +952,32 @@ function Security({
           Simulate losing this phone
         </Button>
       </section>
+
+      {import.meta.env.DEV && !offline && onSwissquoteDown && (
+        <section className="card flat">
+          <h2>What if Swissquote disappears?</h2>
+          <p className="muted">
+            <span className="mock-tag">DEMO</span> Really stops the mock Swissquote service. Your Vault keeps signing, and a
+            lost phone is recovered through the independent partner. Restart it with <code>npm run bank</code>.
+          </p>
+          <Button
+            variant="ghost"
+            icon="power"
+            block
+            onClick={async () => {
+              try {
+                await bank.demoShutdown()
+                onSwissquoteDown()
+              } catch (e) {
+                alertShutdown(errorMessage(e))
+              }
+            }}
+          >
+            Switch Swissquote off
+          </Button>
+          {shutdownErr && <Alert kind="bad">Couldn’t switch it off: {shutdownErr}. Open the app at localhost.</Alert>}
+        </section>
+      )}
     </>
   )
 }

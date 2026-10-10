@@ -8,17 +8,24 @@
 import type { Address, Hex } from "viem"
 import { BANK_API_URL } from "./config"
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BANK_API_URL}${path}`, {
-    headers: { "content-type": "application/json" },
-    ...init,
-  })
+/** Thrown when the Swissquote service can't be reached at all (down, offline, or gone for good). */
+export class Unreachable extends Error {}
+
+export async function callService<T>(base: string, label: string, path: string, init?: RequestInit): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${base}${path}`, { headers: { "content-type": "application/json" }, ...init })
+  } catch {
+    throw new Unreachable(`${label} is unreachable.`)
+  }
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Swissquote API ${res.status}: ${text}`)
+    throw new Error(text || `${label} error ${res.status}`)
   }
   return res.json() as Promise<T>
 }
+
+const api = <T>(path: string, init?: RequestInit) => callService<T>(BANK_API_URL, "Swissquote", path, init)
 
 export type BankSession = { clientId: string; name: string; token: string }
 
@@ -31,12 +38,21 @@ export const bank = {
   guardian: () => api<{ address: Address }>("/guardian"),
 
   /** Link a freshly created wallet to the KYC'd client (ownership verification). */
-  registerWallet: (token: string, body: { walletAddress: Address; backupAddress: Address; passkeyName: string }) =>
+  registerWallet: (
+    token: string,
+    body: { walletAddress: Address; backupAddress: Address; partnerAddress?: Address; passkeyName: string },
+  ) =>
     api<{ ok: true }>("/wallet", { method: "POST", body: JSON.stringify({ token, ...body }) }),
 
   /** The wallet the bank has on file for this client (needed on a new device). */
   getWallet: (token: string) =>
-    api<{ walletAddress: Address; backupAddress: Address; passkeyName: string; recoveredAt: number | null } | null>(
+    api<{
+      walletAddress: Address
+      backupAddress: Address
+      partnerAddress: Address | null
+      passkeyName: string
+      recoveredAt: number | null
+    } | null>(
       `/wallet?token=${encodeURIComponent(token)}`,
     ),
 
@@ -68,9 +84,15 @@ export const bank = {
       body: JSON.stringify({ token, nonce, signature }),
     }),
 
-  /** After the delay, the bank co-signs the recovery user operation. */
-  signRecovery: (id: string, token: string) =>
-    api<{ signature: Hex }>(`/recovery/${id}/sign`, { method: "POST", body: JSON.stringify({ token }) }),
+  /**
+   * After the delay, the bank co-signs the recovery user operation - but only after verifying,
+   * against the chain, that the client's backup key approved exactly this recovery.
+   */
+  signRecovery: (id: string, token: string, backupApproval: Hex) =>
+    api<{ signature: Hex }>(`/recovery/${id}/sign`, { method: "POST", body: JSON.stringify({ token, backupApproval }) }),
+
+  /** DEMO ONLY (localhost): stops the mock Swissquote process to show the Vault works without it. */
+  demoShutdown: () => api<{ ok: true }>("/demo/shutdown", { method: "POST" }),
 
   /** New device reports the on-chain recovery; the new passkey becomes the one on file. */
   completeRecovery: (id: string, txHash: string) =>

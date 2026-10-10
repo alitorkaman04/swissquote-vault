@@ -20,7 +20,7 @@ describe("ui helpers", () => {
 })
 
 describe("recovery validator config", () => {
-  it("is a 2-of-2: bank 50 + backup 50, threshold 100", () => {
+  it("legacy Vaults (no partner) are a 2-of-2: bank 50 + backup 50, threshold 100", () => {
     const c = recoveryConfig("0x8422b6a2b2c7475ccf318575117A690b18e4b0C6", "0x1111111111111111111111111111111111111111")
     expect(c.threshold).toBe(100)
     expect(c.signers.map((s) => s.weight)).toEqual([50, 50])

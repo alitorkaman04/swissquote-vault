@@ -1,18 +1,31 @@
 import { useEffect, useState } from "react"
 import type { Address, Hex } from "viem"
+import { generatePrivateKey } from "viem/accounts"
 import { bank, type BankSession, type RecoveryRequest } from "../lib/bank"
 import { EXPLORER_TX, RECOVERY_DELAY_SECONDS } from "../lib/config"
-import { adoptRecoveredSession, approveWithBackupKey, prepareNewPasskey, submitRecovery, type buildRecoveryClient } from "../lib/recovery"
+import {
+  adoptRecoveredSession,
+  approveWithBackupKey,
+  attackerApproval,
+  checkBackupKey,
+  prepareNewPasskey,
+  submitRecovery,
+  type buildRecoveryClient,
+} from "../lib/recovery"
+import type { RecoverySetup } from "../lib/onchainRecovery"
 import type { WalletSession } from "../lib/wallet"
-import { Alert, Button, Field, Icon, errorMessage, formatGas, short, uniquePasskeyName } from "../ui"
+import { Alert, Button, Countdown, Field, Icon, errorMessage, formatGas, short, uniquePasskeyName } from "../ui"
 import { appendActivity } from "../lib/activity"
 
 /**
  * Lost-phone recovery, as the client experiences it on a NEW device:
  *   1. new passkey            (this device)
  *   2. request to Swissquote  (bank verifies identity, notifies old devices, starts the delay)
- *   3. backup key signature   (client's half of the recovery pair)
- *   4. bank signature         (after the delay, unless the old device cancelled)
+ *   3. backup key signature   (checked against the Vault's recovery keys ON-CHAIN first)
+ *   4. bank signature         (after the delay, unless the old device cancelled; the bank
+ *                              verifies the backup approval before it co-signs)
+ * Includes a demo of the bonus scenario: an attacker with the stolen phone and email inbox
+ * is refused, both by the on-chain key check and by Swissquote.
  *   5. on-chain: passkey replaced, same Vault address, same funds
  */
 export function Recover({
@@ -24,7 +37,7 @@ export function Recover({
 }: {
   bankSession: BankSession
   guardian: Address
-  existing: { walletAddress: Address; backupAddress: Address; passkeyName: string }
+  existing: { walletAddress: Address; passkeyName: string }
   onRecovered: (s: WalletSession) => Promise<void>
   onBack: () => void
 }) {
@@ -33,7 +46,13 @@ export function Recover({
   const [prepared, setPrepared] = useState<{ callData: Hex; serialized: string } | null>(null)
   const [request, setRequest] = useState<RecoveryRequest | null>(null)
   const [backupKey, setBackupKey] = useState("")
-  const [backupSig, setBackupSig] = useState<{ client: Awaited<ReturnType<typeof buildRecoveryClient>>; signature: Hex } | null>(null)
+  const [backupSig, setBackupSig] = useState<{
+    client: Awaited<ReturnType<typeof buildRecoveryClient>>
+    signature: Hex
+    setup: RecoverySetup
+    backupAddress: Address
+  } | null>(null)
+  const [attack, setAttack] = useState<{ chain: string; bank: string } | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -73,24 +92,48 @@ export function Recover({
   const stepBackup = () =>
     run(async () => {
       if (!prepared) throw new Error("no prepared passkey")
-      const key = backupKey.trim() as Hex
-      if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error("That doesn’t look like a backup key (0x + 64 hex characters).")
-      const res = await approveWithBackupKey(existing.walletAddress, guardian, existing.backupAddress, key, prepared.callData)
-      setBackupSig(res)
+      setAttack(null)
+      // Checked against the Vault's recovery keys on-chain before anything is signed.
+      const check = await checkBackupKey(existing.walletAddress, backupKey)
+      if (!check.ok) throw new Error(check.reason)
+      const res = await approveWithBackupKey(existing.walletAddress, check.setup, check.key, prepared.callData)
+      setBackupSig({ ...res, setup: check.setup, backupAddress: check.address })
       setStep(3)
+    })
+
+  /**
+   * Bonus demo: the attacker has the phone and the email inbox (so they could reset the e-banking
+   * password and get this far). They don't have the backup key - so they try a key of their own.
+   */
+  const tryAsAttacker = () =>
+    run(async () => {
+      if (!prepared || !request) throw new Error("start the recovery first")
+      const attackerKey = generatePrivateKey()
+      const chainCheck = await checkBackupKey(existing.walletAddress, attackerKey)
+      let bankAnswer: string
+      try {
+        await bank.signRecovery(request.id, bankSession.token, await attackerApproval(attackerKey, existing.walletAddress, prepared.callData))
+        bankAnswer = "Swissquote accepted it (unexpected)"
+      } catch (e) {
+        bankAnswer = errorMessage(e)
+      }
+      setAttack({ chain: chainCheck.ok ? "Accepted (unexpected)" : chainCheck.reason, bank: bankAnswer })
     })
 
   const stepFinish = () =>
     run(async () => {
       if (!request || !backupSig || !prepared) throw new Error("missing state")
-      const { signature: bankSignature } = await bank.signRecovery(request.id, bankSession.token)
+      const { signature: bankSignature } = await bank.signRecovery(request.id, bankSession.token, backupSig.signature)
       const { txHash, gasCostWei } = await submitRecovery(backupSig.client, prepared.callData, [backupSig.signature, bankSignature])
       appendActivity(existing.walletAddress, { at: Date.now(), label: `Recovered: passkey replaced by “${newName.trim()}”`, txHash, gas: formatGas(gasCostWei) })
       setTxHash(txHash)
       setStep(4)
       await bank.completeRecovery(request.id, txHash).catch(() => {})
+      const partnerAddress = backupSig.setup.signers
+        .map((x) => x.address)
+        .find((a) => ![backupSig.backupAddress, guardian].some((k) => k.toLowerCase() === a.toLowerCase()))
       const session = adoptRecoveredSession(
-        { address: existing.walletAddress, backupAddress: existing.backupAddress, bankGuardianAddress: guardian },
+        { address: existing.walletAddress, backupAddress: backupSig.backupAddress, bankGuardianAddress: guardian, partnerAddress },
         newName.trim(),
         prepared.serialized,
       )
@@ -102,13 +145,10 @@ export function Recover({
   const ready = request?.status === "ready" || request?.status === "signed"
 
   const total = request ? Math.max(1, Math.round((request.unlockAt - request.createdAt) / 1000)) : RECOVERY_DELAY_SECONDS
-  const progress = 1 - secondsLeft / total
-  const R = 64
-  const C = 2 * Math.PI * R
 
   const steps = [
     { t: "Create a passkey on this phone", d: "Face ID makes the new key" },
-    { t: "Sign with your backup key", d: "Your half of the recovery pair" },
+    { t: "Sign with your backup key", d: "Checked on-chain: only your key counts" },
     { t: "Swissquote waits, then co-signs", d: `${RECOVERY_DELAY_SECONDS}s in this demo · 48 h in production` },
     { t: "Passkey replaced on-chain", d: "Same address, same funds" },
   ]
@@ -163,6 +203,12 @@ export function Recover({
           <Button variant="primary" icon="key" busy={busy} onClick={stepBackup} block>
             Sign with backup key
           </Button>
+          <div className="chips">
+            <button type="button" className="chip demo" onClick={tryAsAttacker} disabled={busy}>
+              <Icon name="ban" size={14} /> Demo: try as a thief with the phone + email
+            </button>
+          </div>
+          {attack && <AttackerRefused chain={attack.chain} bank={attack.bank} />}
         </>
       )}
 
@@ -180,28 +226,9 @@ export function Recover({
             </Alert>
           ) : (
             <>
-              <div className="countdown" role="timer" aria-label={`${secondsLeft} seconds left`}>
-                <svg width="148" height="148" viewBox="0 0 148 148" aria-hidden="true">
-                  <circle cx="74" cy="74" r={R} fill="none" stroke="var(--line)" strokeWidth="8" />
-                  <circle
-                    cx="74"
-                    cy="74"
-                    r={R}
-                    fill="none"
-                    stroke="var(--signal)"
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeDasharray={C}
-                    strokeDashoffset={C * (1 - progress)}
-                    style={{ transition: "stroke-dashoffset 1s linear" }}
-                  />
-                </svg>
-                <div className="num">
-                  {secondsLeft}s<small>waiting period</small>
-                </div>
-              </div>
+              <Countdown secondsLeft={secondsLeft} total={total} />
               <p className="hint center-text">
-                Your old devices can cancel during this time. A thief holding your old phone would need your Face ID or
+                <span className="mock-tag">MOCK</span> Delay enforced by the mock Swissquote guardian. Your old devices can cancel during this time. A thief holding your old phone would need your Face ID or
                 your e-banking login to cancel — they have neither.
               </p>
             </>
@@ -229,5 +256,44 @@ export function Recover({
         </Button>
       )}
     </div>
+  )
+}
+
+/** What an attacker holding the stolen phone and the email inbox gets: refused twice, nothing moved. */
+export function AttackerRefused({ chain, bank: bankAnswer }: { chain: string; bank?: string }) {
+  return (
+    <section className="card attack" aria-live="polite">
+      <div className="card-head">
+        <h2>Attacker refused</h2>
+        <span className="pill bad">Stolen phone + email</span>
+      </div>
+      <div className="checks">
+        <span className="sub-head">What the thief has</span>
+        <div className="c">
+          <span className="have"><Icon name="phone" size={18} /></span>
+          <span>Your phone<span className="d">Locked: without your Face ID the passkey signs nothing.</span></span>
+        </div>
+        <div className="c">
+          <span className="have"><Icon name="info" size={18} /></span>
+          <span>Your email inbox<span className="d">Enough to reset an e-banking password and reach this screen.</span></span>
+        </div>
+        <span className="sub-head">What stops them</span>
+        <div className="c">
+          <span className="fail"><Icon name="x" size={18} stroke={2.2} /></span>
+          <span>Backup key, checked against the chain<span className="d">{chain}</span></span>
+        </div>
+        {bankAnswer && (
+          <div className="c">
+            <span className="fail"><Icon name="x" size={18} stroke={2.2} /></span>
+            <span>Swissquote’s co-signature<span className="d">{bankAnswer}</span></span>
+          </div>
+        )}
+        <div className="c">
+          <span className="fail"><Icon name="x" size={18} stroke={2.2} /></span>
+          <span>Time<span className="d">Even a real request waits 48 h while your e-banking and other devices are alerted and can cancel.</span></span>
+        </div>
+      </div>
+      <Alert kind="ok">Nothing reached the blockchain. Your funds never moved.</Alert>
+    </section>
   )
 }

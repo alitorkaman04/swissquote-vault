@@ -40,6 +40,14 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
     `Created       : ${new Date().toISOString()}`,
     "",
     "To recover on a new phone: sign in to Swissquote, choose 'I lost my phone', enter this backup key.",
+    ...(wallet.session.partnerAddress
+      ? [
+          "",
+          "If Swissquote is ever unreachable or gone: open Vault, choose 'Swissquote unreachable?',",
+          "then 'Recover with the partner'. This kit plus the independent recovery partner restore access.",
+          `Recovery partner key : ${wallet.session.partnerAddress} (independent of Swissquote)`,
+        ]
+      : []),
   ].join("\n")
 
   function download() {
@@ -70,7 +78,7 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
         <div className="k">
           0x {groups.join(" ")}
         </div>
-        <p>Print it or store it in a password manager. Swissquote never sees it.</p>
+        <p>Print it or store it in a password manager. Swissquote never sees it.{wallet.session.partnerAddress ? " With the independent partner, it also brings you back if Swissquote is ever gone." : ""}</p>
       </div>
       <div className="row">
         <Button variant="ghost" icon="external" onClick={download}>

@@ -920,6 +920,38 @@ p {
 .checks .fail {
   color: var(--bad);
 }
+.checks .have {
+  color: var(--warn);
+}
+.checks .sub-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+.pill.bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.card.attack {
+  border: 1.5px solid var(--bad-bg);
+}
+.mock-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px dashed currentColor;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  vertical-align: middle;
+}
 
 .success {
   text-align: center;
@@ -1258,4 +1290,55 @@ input[type="number"] {
 }
 .bottom .footer-note {
   margin-top: 0;
+}
+
+/* ------------------------------------------------------------------ independent mode */
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 6px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  align-self: center;
+}
+.link-btn:hover {
+  color: var(--ink);
+}
+.offline-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.realmock {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+}
+.realmock b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.offline-strip svg,
+.demo-note svg {
+  flex-shrink: 0;
 }

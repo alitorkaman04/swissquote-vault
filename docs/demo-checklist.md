@@ -9,7 +9,9 @@
 
 ## 60 minutes before judging
 - [ ] Connect to Wi-Fi; have your phone's hotspot ready as a fallback (the app needs internet for the blockchain).
-- [ ] Terminal: `cd ~/Documents/GitHub/swissquote-vault/app && npm run dev`. Check the yellow `[bank]` lines show the guardian address.
+- [ ] Terminal: `cd ~/Documents/GitHub/swissquote-vault/app && npm run dev`. Check the yellow `[bank]` lines show the guardian address and the magenta `[partner]` lines show the partner address.
+- [ ] Keep `app/server/data.json` **and** `app/server/partner-data.json`: they hold the two guardian keys. Deleting either makes existing Vaults unrecoverable through that guardian.
+- [ ] The Chrome Vault must be one **created after the partner update** (Security tab shows four keys: passkey, backup 60, Swissquote 40, partner 40). Older Vaults still work but have no partner.
 - [ ] **Chrome** (old phone): `localhost:5173`, signed in as `demo`, dashboard showing a balance of at least 5 USDC. If the balance is low, get more at faucet.circle.com.
 - [ ] **Safari** (new phone): `localhost:5173`, signed out or on the "Welcome back" screen. Do **not** leave a half-finished recovery open.
 - [ ] Backup kit `.txt` file open in TextEdit (you'll paste the key).

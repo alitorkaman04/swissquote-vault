@@ -1,10 +1,10 @@
-# Live demo script (about 3 minutes)
+# Live demo script (about 3½ minutes)
 
-**Setup before judging:** Terminal running `npm run dev` in `app/`. Chrome window = "old phone" (signed in, Vault open, some USDC). Safari window = "new phone" (nothing set up yet). Basescan tab open. Backup kit text file open.
+**Setup before judging:** Terminal running `npm run dev` in `app/` (it starts three processes: web, bank, partner). Chrome window = "old phone" with a Vault **created after the partner update** (the Security tab lists four keys), activated, with some USDC. Safari window = "new phone" (nothing set up yet). Basescan tab open. Backup kit text file open.
 
 | Time | Do | Say |
 | --- | --- | --- |
-| 0:00 | Chrome: dashboard | "This is the Vault: a self-custody wallet one tap from your Swissquote account. Three boxes: this phone's passkey controls everything; my backup and Swissquote can only do recovery, together." |
+| 0:00 | Chrome: dashboard | "This is the Vault: a self-custody wallet one tap from your Swissquote account. This phone's passkey controls everything. Recovery needs my backup key plus Swissquote, or an independent partner if Swissquote is ever gone. Swissquote and the partner together can never do it without me." |
 | 0:20 | Send tab → recipient → 5 USDC → Review | "Before I sign: sanctions screening, limits, and a real on-chain simulation. Network fee: paid by Swissquote. I never need ETH." |
 | 0:40 | Sign with passkey → Touch ID → Basescan link | "That's a real transaction on Base, signed by a key in the Secure Enclave. Swissquote never saw it." |
 | 1:00 | Recipient `0x…bad1` → Review | "Sanctioned address: blocked before I can sign." |
@@ -13,10 +13,12 @@
 | 1:25 | Safari ("new phone"): sign in → "I lost my phone" → create passkey | "I lost my phone. On a new one I sign in to Swissquote: that proves who I am." |
 | 1:45 | **Switch to Chrome:** yellow banner "Someone is recovering this Vault" | "Meanwhile every device I still have gets this. If it's a thief with my bank password, one tap cancels it." |
 | *optional* | Click cancel → Touch ID → green "veto signed with this phone's passkey"; Safari shows "Recovery cancelled". Then restart the recovery in Safari | "The veto is signed by my passkey and verified on-chain: a thief can't fake it. Now let's say it really is me." |
-| 2:00 | Back to Safari: paste backup key → countdown | "But it's me. I add my backup key, which Swissquote never had. In production we wait 48 hours; here 30 seconds." |
+| 2:00 | Safari, before pasting the key: tap **"Demo: try as a thief with the phone + email"** → red "Attacker refused" card | "First, the thief. They stole my phone and my inbox, so they could reset my bank password and get here. But they don't have my backup key. The key they try isn't one of this Vault's recovery keys, which the app reads from the blockchain, and Swissquote refuses to co-sign without the real one. Nothing moved." |
+| 2:15 | Paste the real backup key → countdown | "Now the real me. I add my backup key, which Swissquote never had. In production we wait 48 hours; here 30 seconds." |
 | 2:30 | Complete recovery → dashboard, same address, same balance | "Same address, same funds. Only the passkey changed." |
 | 2:45 | Send 1 USDC from Safari; **Chrome now shows "This device no longer controls your Vault"** | "And the new phone signs. The old phone is locked out." |
-| 2:55 | Close | "Swissquote alone can't move a cent. The client alone can. That's not custody, and it keeps the client one tap from their bank." |
+| 2:55 | Close | "Swissquote alone can't move a cent, not even with the partner. The client alone can. That's not custody, and it keeps the client one tap from their bank." |
+| *optional, if asked "what if Swissquote goes bankrupt?"* | Security tab → **Switch Swissquote off** → "Swissquote is unreachable" → Open my Vault without Swissquote → send 1 USDC | "We just stopped Swissquote's server. The Vault still signs. And a lost phone? Backup kit plus the independent partner: 60 plus 40 is 100." Restart the bank afterwards: new terminal tab, `cd ~/Documents/GitHub/swissquote-vault/app`, `npm run bank` |
 
 ## The closer: "Try it with your own phone"
 
