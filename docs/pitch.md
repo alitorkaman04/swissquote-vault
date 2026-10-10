@@ -20,6 +20,8 @@ The deck is the "Swissquote Vault" slides artifact (exports to PowerPoint or PDF
 | Question | Short answer |
 | --- | --- |
 | What if the client loses the phone **and** the backup kit? | Then they can't recover, as with any self-custody wallet. Production adds a second passkey on another device (laptop, hardware key) as an alternative backup, so the client chooses 2 of 3 among phone, second device and printed kit. |
+| Who can cancel a recovery? | Only a device that still holds the current passkey (the veto is signed with it and verified on-chain), or, as a demo fallback, the client's authenticated e-banking session. A thief with the old phone has neither. |
+| How do you verify wallet ownership for FINMA? | The wallet is created inside the KYC'd session, and at any time the client can sign a bank challenge with the passkey; the bank verifies that signature on-chain (ERC-1271). Demo: Security tab. |
 | Can Swissquote and an attacker collude? | Swissquote + a stolen backup kit could start a recovery, but it runs through a 48-hour window during which every client device is alerted and can cancel. Swissquote also runs fraud checks before signing. Docs: threat-model.md, T6/T7. |
 | Isn't the 48-hour delay just a promise by Swissquote? | In the prototype yes, it's enforced by the guardian service. The weighted validator has an on-chain `delay` parameter, so production enforces it in the contract too. |
 | What's mocked? | Bank login, the guardian key's storage (an HSM in production), sanctions lists and the dApp list. Everything on-chain is real. See mocks.md. |

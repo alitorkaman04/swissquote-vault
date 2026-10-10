@@ -12,9 +12,10 @@
 | 1:20 | Security tab → Sign ownership proof | "Swiss rules say the bank must verify this wallet is mine. One tap: the bank challenges, my passkey signs, the bank checks it on-chain." |
 | 1:25 | Safari ("new phone"): sign in → "I lost my phone" → create passkey | "I lost my phone. On a new one I sign in to Swissquote: that proves who I am." |
 | 1:45 | **Switch to Chrome:** yellow banner "Someone is recovering this Vault" | "Meanwhile every device I still have gets this. If it's a thief with my bank password, one tap cancels it." |
+| *optional* | Click cancel → Touch ID → green "veto signed with this phone's passkey"; Safari shows "Recovery cancelled". Then restart the recovery in Safari | "The veto is signed by my passkey and verified on-chain: a thief can't fake it. Now let's say it really is me." |
 | 2:00 | Back to Safari: paste backup key → countdown | "But it's me. I add my backup key, which Swissquote never had. In production we wait 48 hours; here 30 seconds." |
 | 2:30 | Complete recovery → dashboard, same address, same balance | "Same address, same funds. Only the passkey changed." |
-| 2:45 | Send 1 USDC from Safari | "And the new phone signs." |
+| 2:45 | Send 1 USDC from Safari; **Chrome now shows "This device no longer controls your Vault"** | "And the new phone signs. The old phone is locked out." |
 | 2:55 | Close | "Swissquote alone can't move a cent. The client alone can. That's not custody, and it keeps the client one tap from their bank." |
 
 **Rehearse twice before judging**, including the Safari recovery and the cancel banner.
