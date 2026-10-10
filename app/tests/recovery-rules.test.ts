@@ -79,3 +79,27 @@ describe("backup approvals (what the guardians verify before co-signing)", () =>
     await expect(recoverApprovalSigner({ approval: "0x1234", wallet, callData, nonce: 0n, chainId: 84532 })).rejects.toThrow()
   })
 })
+
+import { decodeWeightedHeader } from "../src/lib/onchainRecovery"
+import { encodeAbiParameters, parseAbiParameters } from "viem"
+describe("reading the recovery header from the chain", () => {
+  it("reads the three-word answer the deployed validator gives", () => {
+    const data = encodeAbiParameters(parseAbiParameters("uint24, uint24, uint48"), [140, 100, 0n])
+    expect(decodeWeightedHeader(data)).toEqual({ total: 140, threshold: 100, count: 3 })
+  })
+  it("reads the legacy 50/50 Vault from the three-word answer", () => {
+    const data = encodeAbiParameters(parseAbiParameters("uint24, uint24, uint48"), [100, 100, 0n])
+    expect(decodeWeightedHeader(data)).toEqual({ total: 100, threshold: 100, count: 2 })
+  })
+  it("reads the four-field layout of the published ABI", () => {
+    const data = encodeAbiParameters(parseAbiParameters("uint24, uint24, uint48, uint32"), [140, 100, 0n, 3])
+    expect(decodeWeightedHeader(data)).toEqual({ total: 140, threshold: 100, count: 3 })
+  })
+  it("sees a Vault whose recovery isn't installed yet", () => {
+    const data = encodeAbiParameters(parseAbiParameters("uint24, uint24, uint48"), [0, 0, 0n])
+    expect(decodeWeightedHeader(data).threshold).toBe(0)
+  })
+  it("rejects an answer that's too short", () => {
+    expect(() => decodeWeightedHeader("0x")).toThrow()
+  })
+})

@@ -21,12 +21,13 @@ import {
   getAddress,
   hexToNumber,
   keccak256,
+  encodeFunctionData,
   parseAbi,
   parseAbiParameters,
   recoverTypedDataAddress,
   sliceHex,
 } from "viem"
-import { readContract } from "viem/actions"
+import { call, readContract } from "viem/actions"
 import { entryPoint07Address } from "viem/account-abstraction"
 import { WeightedValidatorContractVersion, getValidatorAddress, type WeightedValidatorConfig } from "@zerodev/weighted-validator"
 
@@ -81,6 +82,34 @@ const WEIGHTED_ABI = parseAbi([
   "function weightedStorage(address kernel) view returns (uint24 totalWeight, uint24 threshold, uint48 delay, uint32 guardianLength)",
 ])
 
+export type WeightedHeader = { total: number; threshold: number; count: number }
+
+/**
+ * Decode the validator's `weightedStorage(kernel)` answer by hand. The ABI published with the SDK
+ * lists four fields (totalWeight, threshold, delay, guardianLength), but the contract deployed on
+ * Base Sepolia answers with three 32-byte words. We read whatever is there: totalWeight and threshold
+ * come first in both layouts; when the guardian count is missing it follows from the total weight,
+ * since our two configurations have different totals (60+40+40 = 140, legacy 50+50 = 100).
+ */
+export function decodeWeightedHeader(data: Hex): WeightedHeader {
+  const words = (data.length - 2) / 64
+  if (words < 3) throw new Error(`unexpected weightedStorage answer (${words} words)`)
+  const word = (i: number) => Number(BigInt(sliceHex(data, i * 32, (i + 1) * 32)))
+  const total = word(0)
+  const threshold = word(1)
+  const count =
+    words >= 4
+      ? word(3)
+      : total === 0
+        ? 0
+        : total === WEIGHTS.backup + WEIGHTS.swissquote + WEIGHTS.partner
+          ? 3
+          : total === LEGACY_WEIGHTS.backup + LEGACY_WEIGHTS.swissquote
+            ? 2
+            : -1
+  return { total, threshold, count }
+}
+
 /** The public recovery addresses on file for a Vault (registered at creation; never secrets). */
 export type KnownKeys = { backup: Address; swissquote: Address; partner?: Address | null }
 
@@ -97,18 +126,16 @@ export async function readRecoverySetup(
   known: KnownKeys,
   { strict = false }: { strict?: boolean } = {},
 ): Promise<RecoverySetup | null> {
-  let header: { total: number; threshold: number; count: number } | null = null
+  let header: WeightedHeader | null = null
   let lastError: unknown
   // Public testnet RPCs drop requests now and then: retry a few times before giving up.
   for (let attempt = 0; attempt < 4 && !header; attempt++) {
     try {
-      const [total, threshold, , count] = await readContract(client, {
-        address: WEIGHTED_VALIDATOR_ADDRESS,
-        abi: WEIGHTED_ABI,
-        functionName: "weightedStorage",
-        args: [wallet],
+      const { data } = await call(client, {
+        to: WEIGHTED_VALIDATOR_ADDRESS,
+        data: encodeFunctionData({ abi: WEIGHTED_ABI, functionName: "weightedStorage", args: [wallet] }),
       })
-      header = { total: Number(total), threshold: Number(threshold), count: Number(count) }
+      header = decodeWeightedHeader(data ?? "0x")
     } catch (e) {
       lastError = e
       if (attempt < 3) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
@@ -117,7 +144,7 @@ export async function readRecoverySetup(
   if (!header) {
     console.warn("could not read the recovery header from the chain:", (lastError as Error)?.message ?? lastError)
     // Guardians (strict) never co-sign without the on-chain check; the app may fall back for display.
-    if (strict) throw new Error("could not read the Vault's recovery setup from the chain (network); press the button again")
+    if (strict) throw new Error("could not read the Vault's recovery setup from the chain; press the button again")
   }
   if (header && (header.threshold === 0 || header.count === 0)) return null
   const withPartner = header ? header.count === 3 : Boolean(known.partner)
