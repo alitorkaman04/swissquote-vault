@@ -205,6 +205,9 @@ app.post("/recovery/:id/sign", async (req, res) => {
     const signature = await bankApprove(r.walletAddress, c.backupAddress!, r.callData)
     r.bankSignature = signature
     r.status = "signed"
+    // The client's new passkey becomes the one on file, so "Unlock with passkey" on
+    // another device looks for the new passkey, not the replaced one.
+    c.passkeyName = r.newPasskeyName
     save(db)
     console.log(`[recovery] ${r.id} co-signed by Swissquote guardian`)
     res.json({ signature })
