@@ -7,7 +7,7 @@ A self-custody crypto wallet that Swissquote could realistically launch for its 
 
 Built in 24 hours at the BSA EPFL Hackathon (10–11 October 2026), Swissquote Wallet track.
 
-## The idea in one paragraph
+## The idea in one paragraph-
 
 Today a Swissquote client who wants self-custody has to withdraw to MetaMask and leave the bank.
 Swissquote Vault is a smart-contract wallet (ERC-4337) on an Ethereum L2 where the everyday signer
