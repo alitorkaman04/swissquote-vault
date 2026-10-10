@@ -2,7 +2,7 @@
  * DEV-ONLY design preview. Renders each screen with sample data so the UI can be reviewed
  * without a passkey, the bank service or the blockchain. Not included in production builds.
  *   /?preview=login | create | welcome | kit | home | banner | review | receive | apps | connect | security | recover
- *             | attacker | down | offline | partner | move | moved | replaced
+ *             | attacker | down | offline | partner | move | moved | withdrawn | replaced
  */
 import type { ReactNode } from "react"
 import type { Address } from "viem"
@@ -189,6 +189,26 @@ export function Preview() {
                 amount: "5 USDC",
                 txHash: "0x9c1e",
               },
+            },
+          }}
+        />
+      </div>
+    ),
+    withdrawn: (
+      <div className="screen">
+        <MoveToSwissquote
+          wallet={wallet}
+          bankSession={bankSession}
+          vaultBalance="13"
+          onMoved={noop}
+          preview={{
+            account: { ...SQ_ACCOUNT, balanceUsdc: "2449.00", treasuryUsdc: "4" } as never,
+            withdrawal: {
+              txHash: "0x7d2a",
+              to: ADDRESS,
+              amountUsdc: "1",
+              at: Date.now(),
+              travelRule: { beneficiary: "Demo (client demo)" },
             },
           }}
         />

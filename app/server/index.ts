@@ -24,7 +24,8 @@ import { randomUUID } from "node:crypto"
 import { type Address, type Hex, isAddress, isHash } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { screenTransfer } from "./compliance.js"
-import { decideDeposit, depositsInLogs, travelRuleRecord } from "./deposits.js"
+import { decideDeposit, decideWithdrawal, depositsInLogs, travelRuleRecord } from "./deposits.js"
+import { treasuryFor } from "./treasury.js"
 import { Refused, coSign, hasProjectId, isDoRecovery, isSignedByVault, publicClient, verifyClientApproval } from "./guardian.js"
 
 // ---------------------------------------------------------------- config
@@ -54,6 +55,15 @@ type Data = {
   /** Swissquote's USDC deposit address (key kept so test funds aren't lost). */
   depositPrivateKey?: Hex
   deposits?: Record<string, Deposit> // txHash -> deposit
+  withdrawals?: Withdrawal[]
+}
+type Withdrawal = {
+  txHash: Hex
+  clientId: string
+  to: Address
+  amountUsdc: string
+  at: number
+  travelRule: Record<string, string>
 }
 type Deposit = {
   txHash: Hex
@@ -99,15 +109,19 @@ const db = load()
 const bankAccount = privateKeyToAccount(db.bankGuardianPrivateKey)
 db.depositPrivateKey ??= generatePrivateKey()
 db.deposits ??= {}
+db.withdrawals ??= []
 save(db)
-const depositAddress = privateKeyToAccount(db.depositPrivateKey).address
 const USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const // Circle test USDC on Base Sepolia
+// Swissquote's treasury smart account: deposit address and source of withdrawals (gas sponsored).
+const treasury = treasuryFor(privateKeyToAccount(db.depositPrivateKey), USDC)
 const STARTING_BALANCE_USDC = "2450.00" // mock Swissquote account balance for every new client
 
 console.log(`Swissquote guardian service (MOCK)  http://localhost:${PORT}`)
 console.log(`  guardian address : ${bankAccount.address}`)
 console.log(`  recovery delay   : ${RECOVERY_DELAY_SECONDS}s (production: 48h)`)
-console.log(`  deposit address  : ${depositAddress}`)
+treasury()
+  .then((t) => console.log(`[bank] deposit address (Swissquote treasury): ${t.address}`))
+  .catch((e) => console.warn("[bank] treasury not ready yet (will retry on first use):", (e as Error).message))
 if (!process.env.BANK_GUARDIAN_PRIVATE_KEY)
   console.log("  NOTE: guardian key lives in server/data.json - keep that file (or set BANK_GUARDIAN_PRIVATE_KEY in .env)")
 if (!hasProjectId) console.warn("  WARNING: ZERODEV_PROJECT_ID not set - recovery signing will fail")
@@ -367,13 +381,15 @@ const recentDeposits = (clientId: string) =>
     .sort((a, b) => b.at - a.at)
     .slice(0, 5)
 
-app.get("/account", (req, res) => {
+app.get("/account", async (req, res) => {
   try {
     const clientId = auth(String(req.query.token ?? ""))
     const c = db.clients[clientId]
+    const t = await treasury()
     res.json({
       balanceUsdc: balanceOf(c),
-      depositAddress,
+      depositAddress: t.address,
+      treasuryUsdc: await t.usdcBalance().catch(() => null),
       walletAddress: c.walletAddress ?? null,
       ownershipVerifiedAt: c.ownershipVerifiedAt ?? null,
       deposits: recentDeposits(clientId),
@@ -406,7 +422,7 @@ app.post("/deposits/claim", async (req, res) => {
 
     // Read what actually happened on-chain: USDC transfers into Swissquote's deposit address.
     const receipt = await receiptWithRetry(txHash)
-    const found = depositsInLogs(receipt.logs, USDC, depositAddress)
+    const found = depositsInLogs(receipt.logs, USDC, (await treasury()).address)
     if (!found) return res.status(400).send("this transaction sent no USDC to Swissquote's deposit address")
     const { from, amountUsdc } = found
 
@@ -430,6 +446,64 @@ app.post("/deposits/claim", async (req, res) => {
     res.json({ ...deposit, balanceUsdc: balanceOf(c) })
   } catch (e: any) {
     console.error(e)
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+
+// Withdrawal: Swissquote sends real USDC from its treasury, but only to the client's own verified Vault.
+app.post("/withdrawals", async (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const c = db.clients[clientId]
+    const amountUsdc = String(req.body?.amountUsdc ?? "")
+    const to = (req.body?.to ?? c.walletAddress ?? "") as Address
+    const decision = decideWithdrawal({ to, amountUsdc: Number(amountUsdc), balanceUsdc: Number(balanceOf(c)), client: c })
+    if (!decision.ok) return res.status(403).send(decision.reason)
+    const t = await treasury()
+    const onChain = Number(await t.usdcBalance())
+    if (onChain < Number(amountUsdc)) {
+      return res
+        .status(409)
+        .send(`Swissquote's test treasury holds only ${onChain} USDC on Base Sepolia. Move some USDC to Swissquote first (testnet funds).`)
+    }
+    const txHash = await t.sendUsdc(to, amountUsdc)
+    c.swissquoteUsdc = (Number(balanceOf(c)) - Number(amountUsdc)).toFixed(2)
+    const w: Withdrawal = {
+      txHash,
+      clientId,
+      to,
+      amountUsdc,
+      at: Date.now(),
+      travelRule: {
+        originator: `${c.name} (client ${clientId}), Swissquote account`,
+        originatorInstitution: "Swissquote Bank (mock)",
+        beneficiary: `${c.name} (client ${clientId})`,
+        beneficiaryWallet: to,
+        walletType: "Self-hosted wallet (Swissquote Vault)",
+        ownership: `Verified on-chain (ERC-1271 passkey signature) ${new Date(c.ownershipVerifiedAt!).toISOString()}`,
+        amount: `${amountUsdc} USDC`,
+        txHash,
+      },
+    }
+    db.withdrawals!.push(w)
+    save(db)
+    console.log(`[withdrawal] ${amountUsdc} USDC to ${to} (client's verified Vault): SENT ${txHash}`)
+    res.json({ ...w, balanceUsdc: balanceOf(c) })
+  } catch (e: any) {
+    console.error(e)
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+
+// Demo: what if someone asks Swissquote to send to a wallet that isn't the client's? (checked, nothing sent)
+app.post("/withdrawals/check", (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const c = db.clients[clientId]
+    const to = req.body?.to
+    if (!isAddress(to)) return res.status(400).send("bad address")
+    res.json(decideWithdrawal({ to, amountUsdc: 1, balanceUsdc: Number(balanceOf(c)), client: c }))
+  } catch (e: any) {
     res.status(e.status ?? 500).send(e.message)
   }
 })

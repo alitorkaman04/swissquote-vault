@@ -105,6 +105,14 @@ export const bank = {
   claimDeposit: (token: string, txHash: string) =>
     api<Deposit & { balanceUsdc: string }>("/deposits/claim", { method: "POST", body: JSON.stringify({ token, txHash }) }),
 
+  /** Swissquote sends USDC from its treasury to the client's own verified Vault (real, on-chain). */
+  withdraw: (token: string, amountUsdc: string) =>
+    api<Withdrawal & { balanceUsdc: string }>("/withdrawals", { method: "POST", body: JSON.stringify({ token, amountUsdc }) }),
+
+  /** Demo: would Swissquote send to this address? (checked only, nothing is sent) */
+  checkWithdrawal: (token: string, to: Address) =>
+    api<{ ok: boolean; reason?: string }>("/withdrawals/check", { method: "POST", body: JSON.stringify({ token, to }) }),
+
   /** Demo: how a deposit from another wallet would be treated (simulated sender). */
   checkSender: (token: string, from: Address) =>
     api<{ status: "credited" | "held"; reason: string; nextStep?: string }>("/deposits/check-sender", {
@@ -167,9 +175,19 @@ export type Deposit = {
   }
 }
 
+export type Withdrawal = {
+  txHash: string
+  to: Address
+  amountUsdc: string
+  at: number
+  travelRule: Record<string, string>
+}
+
 export type SwissquoteAccount = {
   balanceUsdc: string
   depositAddress: Address
+  /** Test USDC actually held by Swissquote's treasury on Base Sepolia (limits real withdrawals). */
+  treasuryUsdc?: string | null
   walletAddress: Address | null
   ownershipVerifiedAt: number | null
   deposits: Deposit[]

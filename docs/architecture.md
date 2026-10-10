@@ -188,7 +188,8 @@ sequenceDiagram
 | Transaction simulation | Before signing | Real `eth_call` simulation on Base Sepolia |
 | Approved dApp list | Apps tab | Static list. Unknown dApps are blocked. Allowances read from chain; one-tap revoke |
 | Wallet ownership proof | Security tab, Move to Swissquote | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |
-| Travel Rule check on deposits | Move to Swissquote | Bank reads the USDC transfer on-chain; credits only from the client's proven Vault, keeps the originator/beneficiary record; other senders held |
+| Travel Rule check on deposits | Move (Vault → Swissquote) | Bank reads the USDC transfer on-chain; credits only from the client's proven Vault, keeps the originator/beneficiary record; other senders held |
+| Travel Rule check on withdrawals | Move (Swissquote → Vault) | Bank sends real USDC from its treasury smart account (gas sponsored) only to the client's proven Vault; other destinations refused |
 | Recovery veto | Old device | Signed by the current passkey (ERC-1271); fallback: authenticated session |
 | Gas sponsorship | Every operation | Real paymaster; production policy above |
 | Recovery approvals | Both guardians | Backup approval verified (registered backup key, on-chain recovery setup) before co-signing |

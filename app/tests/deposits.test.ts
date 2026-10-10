@@ -49,3 +49,21 @@ describe("reading a deposit from the chain", () => {
     expect(depositsInLogs(logs, USDC, DEPOSIT)).toBeNull()
   })
 })
+
+import { decideWithdrawal } from "../server/deposits"
+describe("Travel Rule check on withdrawals from Swissquote", () => {
+  const verified = { walletAddress: VAULT, ownershipVerifiedAt: Date.now() }
+  it("sends to the client's own, ownership-verified Vault", () => {
+    expect(decideWithdrawal({ to: VAULT, amountUsdc: 1, balanceUsdc: 10, client: verified }).ok).toBe(true)
+  })
+  it("refuses any other destination", () => {
+    expect(decideWithdrawal({ to: STRANGER, amountUsdc: 1, balanceUsdc: 10, client: verified }).ok).toBe(false)
+  })
+  it("refuses until the Vault's ownership is proven", () => {
+    expect(decideWithdrawal({ to: VAULT, amountUsdc: 1, balanceUsdc: 10, client: { walletAddress: VAULT } }).ok).toBe(false)
+  })
+  it("refuses zero amounts and amounts above the balance", () => {
+    expect(decideWithdrawal({ to: VAULT, amountUsdc: 0, balanceUsdc: 10, client: verified }).ok).toBe(false)
+    expect(decideWithdrawal({ to: VAULT, amountUsdc: 11, balanceUsdc: 10, client: verified }).ok).toBe(false)
+  })
+})

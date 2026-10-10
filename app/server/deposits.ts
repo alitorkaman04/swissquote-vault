@@ -74,3 +74,31 @@ export function travelRuleRecord(args: {
     txHash: args.txHash,
   }
 }
+
+/**
+ * The same rule in the other direction: Swissquote only SENDS crypto to an external wallet that is
+ * verified as the client's own (FINMA Guidance 02/2019). Anything else is refused before it leaves.
+ */
+export type WithdrawalDecision = { ok: true } | { ok: false; reason: string }
+
+export function decideWithdrawal(args: {
+  to: string
+  amountUsdc: number
+  balanceUsdc: number
+  client: { walletAddress?: string; ownershipVerifiedAt?: number }
+}): WithdrawalDecision {
+  const { to, amountUsdc, balanceUsdc, client } = args
+  if (!(amountUsdc > 0)) return { ok: false, reason: "Enter an amount above zero." }
+  if (amountUsdc > balanceUsdc) return { ok: false, reason: "That is more than your Swissquote account holds." }
+  if (!client.walletAddress || client.walletAddress.toLowerCase() !== to.toLowerCase()) {
+    return {
+      ok: false,
+      reason:
+        "Refused: Swissquote only sends crypto to an external wallet verified as your own (Travel Rule, FINMA Guidance 02/2019). This address isn't your Vault.",
+    }
+  }
+  if (!client.ownershipVerifiedAt) {
+    return { ok: false, reason: "Prove ownership of your Vault with your passkey first; then Swissquote can send to it." }
+  }
+  return { ok: true }
+}

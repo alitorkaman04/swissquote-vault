@@ -285,7 +285,7 @@ export function Dashboard({
             <span>{sqBalance ? `${formatAmount(sqBalance)} USDC` : "—"}</span>
           </span>
           <span className="go">
-            Move from Vault <Icon name="chevron" size={14} />
+            Move <Icon name="chevron" size={14} />
           </span>
         </button>
       )}
@@ -367,11 +367,11 @@ function activityIcon(label: string): IconName {
   if (label.startsWith("Recovered")) return "recover"
   if (label.startsWith("Proved")) return "shieldCheck"
   if (label.startsWith("Vault activated")) return "spark"
-  if (label.startsWith("Moved") || label.startsWith("Sent to Swissquote")) return "bank"
+  if (label.startsWith("Moved") || label.startsWith("Sent to Swissquote") || label.startsWith("Received from your Swissquote")) return "bank"
   return "check"
 }
 function activityTone(label: string) {
-  if (label.startsWith("Proved") || label.startsWith("Vault activated") || label.startsWith("Recovered") || label.startsWith("Moved")) return "ok"
+  if (label.startsWith("Proved") || label.startsWith("Vault activated") || label.startsWith("Recovered") || label.startsWith("Moved") || label.startsWith("Received from")) return "ok"
   return ""
 }
 
