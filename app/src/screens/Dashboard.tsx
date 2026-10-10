@@ -304,15 +304,20 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
         </div>
         {screening && (
           <div className="checks">
-            {screening.checks.map((c) => (
-              <div key={c.name}>
-                <span className={`mark ${c.passed ? "pass" : "fail"}`}>{c.passed ? "✓" : "✕"}</span>
-                <span>
-                  {c.name}
-                  <span className="muted"> — {c.detail}</span>
-                </span>
-              </div>
-            ))}
+            {screening.checks.map((c) => {
+              // The high-value check turns green once the client confirmed with their security code.
+              const passed = c.passed || (steppedUp && c.name.startsWith("High-value"))
+              const detail = passed && !c.passed ? "Confirmed with security code" : c.detail
+              return (
+                <div key={c.name}>
+                  <span className={`mark ${passed ? "pass" : "fail"}`}>{passed ? "✓" : "✕"}</span>
+                  <span>
+                    {c.name}
+                    <span className="muted"> — {detail}</span>
+                  </span>
+                </div>
+              )
+            })}
             {simulation && (
               <div>
                 <span className={`mark ${simulation.ok ? "pass" : "fail"}`}>{simulation.ok ? "✓" : "✕"}</span>
