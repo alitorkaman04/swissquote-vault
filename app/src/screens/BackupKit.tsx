@@ -2,7 +2,7 @@ import { useState } from "react"
 import type { Hex } from "viem"
 import { activateWallet, type Wallet } from "../lib/wallet"
 import { EXPLORER_TX } from "../lib/config"
-import { Alert, Button, errorMessage, formatGas } from "../ui"
+import { Alert, Button, Icon, errorMessage, formatGas } from "../ui"
 import { appendActivity } from "../lib/activity"
 
 /**
@@ -56,26 +56,27 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const groups = backupPrivateKey.slice(2).match(/.{1,4}/g) ?? []
+
   return (
     <div className="screen">
-      <div>
-        <h1>Save your backup kit</h1>
-        <p>
-          If you lose this phone, your backup key plus your Swissquote login restore access. Neither works alone.
-        </p>
+      <div className="title">
+        <span className="ico lg ok"><Icon name="check" size={28} stroke={2.4} /></span>
+        <h1>Your Vault is created</h1>
+        <p>One last step: save your backup key. If you lose this phone, the backup key plus your Swissquote login restore access. Neither works alone.</p>
       </div>
       <div className="kit">
-        <h2>Backup key</h2>
-        <p>Shown once. Print it or store it in a password manager.</p>
-        <div className="mono" style={{ marginTop: 10 }}>
-          {backupPrivateKey}
+        <span className="lbl">BACKUP KEY · SHOWN ONCE</span>
+        <div className="k">
+          0x {groups.join(" ")}
         </div>
+        <p>Print it or store it in a password manager. Swissquote never sees it.</p>
       </div>
       <div className="row">
-        <Button variant="ghost" onClick={download}>
+        <Button variant="ghost" icon="external" onClick={download}>
           Download kit
         </Button>
-        <Button variant="ghost" onClick={copy}>
+        <Button variant="ghost" icon={copied ? "check" : "copy"} onClick={copy}>
           {copied ? "Copied" : "Copy key"}
         </Button>
       </div>
@@ -85,20 +86,18 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
       </label>
       {activation && (
         <Alert kind={activation.ok ? "ok" : "warn"}>
-          {activation.detail}
+          <span>{activation.detail}</span>
           {activation.txHash && (
             <a href={EXPLORER_TX(activation.txHash)} target="_blank" rel="noreferrer">View on Basescan</a>
           )}
         </Alert>
       )}
-      <Button variant="primary" disabled={!saved || !!activation} busy={activating} onClick={activateAndOpen} block>
+      <Button variant="primary" icon="faceid" disabled={!saved || !!activation} busy={activating} onClick={activateAndOpen} block>
         Activate my Vault
       </Button>
-      <p className="muted" style={{ textAlign: "center" }}>
-        One Face ID: deploys your Vault and installs recovery. Gas paid by Swissquote.
-      </p>
+      <p className="hint center-text">One Face ID: deploys your Vault and turns on recovery. Gas paid by Swissquote.</p>
       <div className="footer-note">
-        Production: the kit is a printed sheet or a second passkey on another device; the demo shows the raw key.
+        <Icon name="info" size={14} /> Production: a printed kit or a second passkey; the demo shows the raw key
       </div>
     </div>
   )

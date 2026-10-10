@@ -1,16 +1,35 @@
 import { useCallback, useEffect, useState } from "react"
 import { type Address, encodeFunctionData, erc20Abi, isAddress, parseUnits } from "viem"
 import { bank, type ApprovedDapp, type BankSession, type RecoveryRequest, type ScreeningResult } from "../lib/bank"
-import { EXPLORER_ADDRESS, EXPLORER_TX, USDC_ADDRESS, USDC_DECIMALS } from "../lib/config"
+import { EXPLORER_ADDRESS, EXPLORER_TX, HIGH_VALUE_THRESHOLD_USDC, USDC_ADDRESS, USDC_DECIMALS } from "../lib/config"
 import { getBalances, getUsdcAllowance, isDeployed, publicClient, revokeUsdcAllowance, sendCalls, sendUsdc, signMessageWithPasskey, type Wallet } from "../lib/wallet"
 import QRCode from "qrcode"
-import { Alert, Button, Field, errorMessage, formatGas, short } from "../ui"
+import {
+  AddressGroups,
+  Alert,
+  Button,
+  CopyButton,
+  Field,
+  Icon,
+  type IconName,
+  errorMessage,
+  formatAmount,
+  formatGas,
+  relativeTime,
+  short,
+} from "../ui"
 
 import { appendActivity, readActivity, type Activity } from "../lib/activity"
 
+type Tab = "send" | "receive" | "dapps" | "security"
+
+/** Demo shortcuts so nobody has to type an address live. */
+const DEMO_RECIPIENT = "0x8422b6a2b2c7475ccf318575117A690b18e4b0C6"
+const DEMO_SANCTIONED = "0x000000000000000000000000000000000000bad1"
+
 export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankSession: BankSession; onLostDevice: () => void }) {
   const { address } = wallet.session
-  const [tab, setTab] = useState<"send" | "receive" | "dapps" | "security">("send")
+  const [tab, setTab] = useState<Tab>("send")
   const [vetoBusy, setVetoBusy] = useState(false)
   const [vetoNote, setVetoNote] = useState<string | null>(null)
   const [balances, setBalances] = useState<{ usdc: string; eth: string } | null>(null)
@@ -19,6 +38,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   const [pendingRecovery, setPendingRecovery] = useState<RecoveryRequest | null>(null)
   const [copied, setCopied] = useState(false)
   const [replaced, setReplaced] = useState(false)
+  const [, setTick] = useState(0)
 
   const refresh = useCallback(async () => {
     const [b, d] = await Promise.all([getBalances(address), isDeployed(address)])
@@ -31,6 +51,12 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     const t = setInterval(() => refresh().catch(() => {}), 15000)
     return () => clearInterval(t)
   }, [refresh])
+
+  // Keep "3 min ago" labels fresh.
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   // The OLD device watches for recovery attempts so the legitimate owner can veto one,
   // and notices when a completed recovery has replaced its passkey.
@@ -54,20 +80,46 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     setActivity(appendActivity(address, a))
   }
 
+  async function veto(req: RecoveryRequest) {
+    setVetoBusy(true)
+    try {
+      // Strong veto: this device proves it still holds the passkey by signing the veto (ERC-1271).
+      const message = bank.cancelMessage(req.id)
+      let signature: `0x${string}` | undefined
+      try {
+        signature = await signMessageWithPasskey(wallet, message)
+      } catch {
+        signature = undefined // fall back to the e-banking session
+      }
+      const r = await bank.cancelRecovery(req.id, { token: bankSession.token, message, signature })
+      setVetoNote(r.vetoedBy === "passkey" ? "Recovery cancelled — veto signed with this phone’s passkey." : "Recovery cancelled.")
+      setPendingRecovery(null)
+      setTimeout(() => setVetoNote(null), 8000)
+    } catch (e) {
+      setVetoNote(`Could not cancel: ${errorMessage(e)}`)
+    } finally {
+      setVetoBusy(false)
+    }
+  }
+
   if (replaced) {
     return (
       <div className="screen">
-        <Alert kind="bad">
-          <b>This device no longer controls your Vault.</b>
-          <span>
-            Its passkey was replaced by a recovery from another device. Your funds are safe at the same address, under the
-            new passkey. If you didn’t do this, contact Swissquote immediately.
+        <div className="title">
+          <span className="ico lg" style={{ background: "var(--bad-bg)", color: "var(--bad)" }}>
+            <Icon name="lock" size={28} />
           </span>
-        </Alert>
+          <h1>This device no longer controls your Vault</h1>
+          <p>
+            Its passkey was replaced by a recovery from another device. Your funds are safe at the same address, under the
+            new passkey.
+          </p>
+        </div>
         <div className="card flat">
-          <span className="muted">Vault</span>
+          <span className="section-label">Vault</span>
           <span className="mono">{address}</span>
         </div>
+        <Alert kind="warn">If you didn’t do this, contact Swissquote immediately.</Alert>
         <Button
           variant="ghost"
           block
@@ -82,104 +134,94 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     )
   }
 
+  const actions: { id: Tab; label: string; icon: IconName }[] = [
+    { id: "send", label: "Send", icon: "send" },
+    { id: "receive", label: "Receive", icon: "receive" },
+    { id: "dapps", label: "Apps", icon: "apps" },
+    { id: "security", label: "Security", icon: "shield" },
+  ]
+
   return (
     <div className="screen">
       {pendingRecovery && (
-        <Alert kind="warn">
-          <b>Someone is recovering this Vault from a new device.</b>
-          <span>
-            Requested {new Date(pendingRecovery.createdAt).toLocaleTimeString()}. If that isn’t you, stop it now — nothing
-            happens until the waiting period ends.
+        <div className="banner" role="alert">
+          <div className="head">
+            <span className="pulse" />
+            Someone is recovering this Vault
+          </div>
+          <span style={{ fontSize: 14, lineHeight: 1.45 }}>
+            A new device requested recovery at {new Date(pendingRecovery.createdAt).toLocaleTimeString()}. If that isn’t
+            you, stop it now — nothing happens until the waiting period ends.
           </span>
-          <Button
-            variant="danger"
-            busy={vetoBusy}
-            onClick={async () => {
-              setVetoBusy(true)
-              try {
-                // Strong veto: this device proves it still holds the passkey by signing the veto (ERC-1271).
-                const message = bank.cancelMessage(pendingRecovery.id)
-                let signature: `0x${string}` | undefined
-                try {
-                  signature = await signMessageWithPasskey(wallet, message)
-                } catch {
-                  signature = undefined // fall back to the e-banking session
-                }
-                const r = await bank.cancelRecovery(pendingRecovery.id, { token: bankSession.token, message, signature })
-                setVetoNote(r.vetoedBy === "passkey" ? "Recovery cancelled — veto signed with this phone’s passkey." : "Recovery cancelled.")
-                setPendingRecovery(null)
-                setTimeout(() => setVetoNote(null), 8000)
-              } catch (e) {
-                setVetoNote(`Could not cancel: ${errorMessage(e)}`)
-              } finally {
-                setVetoBusy(false)
-              }
-            }}
-          >
+          <Button variant="danger" icon="faceid" busy={vetoBusy} onClick={() => veto(pendingRecovery)} block>
             That’s not me — cancel recovery
           </Button>
-        </Alert>
+        </div>
       )}
       {vetoNote && (
-        <Alert kind="ok">
+        <Alert kind={vetoNote.startsWith("Could not") ? "bad" : "ok"}>
           <b>{vetoNote}</b>
-          <span>Your funds never moved.</span>
+          {!vetoNote.startsWith("Could not") && <span>Your funds never moved.</span>}
         </Alert>
       )}
 
-      <div className="balance">
-        <div className="amount">
-          {balances ? Number(balances.usdc).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
-          <span>USDC</span>
+      <section className="balance-card" aria-label="Balance">
+        <div>
+          <div className="label">Balance</div>
+          <div className="amount" style={{ marginTop: 8 }}>
+            {balances ? formatAmount(balances.usdc) : "—"}
+            <small>USDC</small>
+          </div>
+          <div className="eth">{balances ? `${Number(balances.eth).toFixed(5)} ETH · no ETH needed for fees` : "Loading balance…"}</div>
         </div>
-        <div className="sub">
-          <a href={EXPLORER_ADDRESS(address)} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
-            {short(address, 8)}
+        <div className="foot">
+          <button
+            className="addr-chip"
+            title="Copy address"
+            onClick={() =>
+              navigator.clipboard.writeText(address).then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              })
+            }
+          >
+            {copied ? "Copied" : short(address, 6)}
+            <Icon name={copied ? "check" : "copy"} size={14} />
+          </button>
+          <a
+            className={`net-pill${deployed === false ? " pending" : ""}`}
+            href={EXPLORER_ADDRESS(address)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: "none" }}
+          >
+            {deployed === false ? "Activates with first transfer" : "Base · recoverable"}
           </a>
-          {" · "}
-          {balances ? `${Number(balances.eth).toFixed(5)} ETH` : ""}
-          {" · "}
-          {deployed === false ? "activates with your first transfer" : deployed ? "active" : ""}
         </div>
-        <button
-          className="btn ghost"
-          style={{ marginTop: 10, padding: "6px 12px", fontSize: 13 }}
-          onClick={() => {
-            navigator.clipboard.writeText(address).then(() => {
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            })
-          }}
-        >
-          {copied ? "Copied" : "Copy address"}
-        </button>
-      </div>
+      </section>
 
-      <div className="keys">
-        <div className="key you">
-          <b>This phone</b>
-          Passkey · full control
-          <div className="muted">Signs every transfer</div>
-        </div>
-        <div className="key">
-          <b>Your backup</b>
-          Recovery only
-          <div className="muted">Half of the recovery pair</div>
-        </div>
-        <div className="key">
-          <b>Swissquote</b>
-          Recovery only
-          <div className="muted">Other half · after a delay</div>
-        </div>
-      </div>
-
-      <div className="tabs">
-        {(["send", "receive", "dapps", "security"] as const).map((t) => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t === "send" ? "Send" : t === "receive" ? "Receive" : t === "dapps" ? "Apps" : "Security"}
+      <nav className="actions" aria-label="Wallet actions">
+        {actions.map((a) => (
+          <button key={a.id} className={`action${tab === a.id ? " active" : ""}`} onClick={() => setTab(a.id)} aria-pressed={tab === a.id}>
+            <span className="disc">
+              <Icon name={a.icon} size={22} />
+            </span>
+            {a.label}
           </button>
         ))}
-      </div>
+      </nav>
+
+      <button className="protect" onClick={() => setTab("security")}>
+        <Icon name="shieldCheck" size={20} />
+        <span>
+          <b>Protected</b> · passkey + 2-of-2 recovery
+        </span>
+        <span className="keys3" aria-hidden="true">
+          <span><Icon name="phone" size={13} /></span>
+          <span><Icon name="key" size={13} /></span>
+          <span><Icon name="bank" size={13} /></span>
+        </span>
+      </button>
 
       {tab === "send" && <Send wallet={wallet} bankSession={bankSession} onSent={(a) => { addActivity(a); refresh() }} balance={balances?.usdc} />}
       {tab === "receive" && <Receive address={address} />}
@@ -194,21 +236,33 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
       )}
 
       {activity.length > 0 && (
-        <div className="card">
-          <h2>Recent</h2>
+        <section className="card">
+          <div className="card-head">
+            <h2>Activity</h2>
+            <a className="btn quiet sm" href={EXPLORER_ADDRESS(address)} target="_blank" rel="noreferrer">
+              All on Basescan <Icon name="external" size={14} />
+            </a>
+          </div>
           <div className="list">
             {activity.map((a) => (
               <div className="item" key={`${a.at}-${a.txHash}`}>
-                <div>
-                  <div className="name">{a.label}</div>
-                  <div className="sub">{new Date(a.at).toLocaleString()}</div>
+                <div className="left">
+                  <span className={`ico ${activityTone(a.label)}`}>
+                    <Icon name={activityIcon(a.label)} size={18} />
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="name">{a.label}</div>
+                    <div className="sub">
+                      {relativeTime(a.at)}
+                      {a.gas ? ` · fee ${a.gas}` : ""}
+                    </div>
+                  </div>
                 </div>
                 <div className="right">
-                  {a.amount && <div>{a.amount}</div>}
-                  {a.gas && <div className="sub">fee {a.gas} · Swissquote</div>}
+                  {a.amount && <div style={{ fontWeight: 600 }}>{a.amount}</div>}
                   {a.txHash ? (
-                    <a className="sub" href={EXPLORER_TX(a.txHash)} target="_blank" rel="noreferrer">
-                      view on Basescan
+                    <a className="sub" href={EXPLORER_TX(a.txHash)} target="_blank" rel="noreferrer" title="View on Basescan">
+                      <Icon name="external" size={14} />
                     </a>
                   ) : (
                     <span className="sub">off-chain</span>
@@ -217,10 +271,24 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   )
+}
+
+function activityIcon(label: string): IconName {
+  if (label.startsWith("Sent")) return "send"
+  if (label.startsWith("Allowed")) return "apps"
+  if (label.startsWith("Revoked")) return "ban"
+  if (label.startsWith("Recovered")) return "recover"
+  if (label.startsWith("Proved")) return "shieldCheck"
+  if (label.startsWith("Vault activated")) return "spark"
+  return "check"
+}
+function activityTone(label: string) {
+  if (label.startsWith("Proved") || label.startsWith("Vault activated") || label.startsWith("Recovered")) return "ok"
+  return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -275,75 +343,103 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
     }
   }
 
+  async function paste() {
+    try {
+      const t = (await navigator.clipboard.readText()).trim()
+      if (t) setTo(t)
+    } catch {
+      /* clipboard permission denied: user can type */
+    }
+  }
+
   if (stage === "done" && result) {
     return (
-      <div className="card">
-        <Alert kind="ok">
-          <b>Sent {amount} USDC</b>
-          <span>Network fee {result.gas ? `of ${result.gas} ` : ""}paid by Swissquote. You never needed ETH.</span>
-          <a href={EXPLORER_TX(result.txHash)} target="_blank" rel="noreferrer">
-            View the transaction on Basescan
-          </a>
-        </Alert>
-        <Button variant="ghost" onClick={() => { setStage("form"); setResult(null); setTo(""); setSteppedUp(false); setOtp("") }} block>
+      <section className="card">
+        <div className="success">
+          <span className="ring"><Icon name="check" size={36} stroke={2.4} /></span>
+          <h3>Sent {formatAmount(amount)} USDC</h3>
+          <p className="muted">to {short(to, 8)}</p>
+          <span className="pill ok">
+            <Icon name="fuel" size={14} /> Fee {result.gas ? `${result.gas} ` : ""}paid by Swissquote
+          </span>
+        </div>
+        <a className="btn ghost block" href={EXPLORER_TX(result.txHash)} target="_blank" rel="noreferrer">
+          <Icon name="external" size={18} /> View on Basescan
+        </a>
+        <Button variant="quiet" onClick={() => { setStage("form"); setResult(null); setTo(""); setSteppedUp(false); setOtp("") }} block>
           Send another
         </Button>
-      </div>
+      </section>
     )
   }
 
   if (stage === "review" || stage === "signing") {
     const needsStepUp = screening?.decision === "review" && !steppedUp
     const blocked = screening?.decision === "block" || simulation?.ok === false || needsStepUp
+    const after = balance ? Number(balance) - Number(amount) : null
     return (
-      <div className="card">
-        <h2>Review before signing</h2>
-        <div className="list">
-          <div className="item"><span>To</span><span className="right mono">{short(to, 8)}</span></div>
-          <div className="item"><span>Amount</span><span className="right">{amount} USDC</span></div>
-          <div className="item"><span>Network fee</span><span className="right pill ok">Paid by Swissquote</span></div>
-          <div className="item"><span>Balance after</span><span className="right">{balance ? (Number(balance) - Number(amount)).toFixed(2) : "—"} USDC</span></div>
+      <section className="card">
+        <div className="card-head">
+          <h2>Review before signing</h2>
+          <span className="section-label">Step 2 of 2</span>
+        </div>
+        <div className="review-hero">
+          <div className="amt">
+            {formatAmount(amount)}
+            <small>USDC</small>
+          </div>
+          <div className="to">
+            to <span className="mono">{short(to, 8)}</span>
+          </div>
+        </div>
+        <div className="list kv">
+          <div className="item"><span>Network fee</span><span className="right pill ok"><Icon name="fuel" size={13} /> Paid by Swissquote</span></div>
+          <div className="item"><span>Balance after</span><span className="right" style={after !== null && after < 0 ? { color: "var(--bad)" } : undefined}>{after !== null ? formatAmount(after) : "—"} USDC</span></div>
         </div>
         {screening && (
-          <div className="checks">
+          <div className="checks" aria-label="Compliance checks">
             {screening.checks.map((c) => {
               // The high-value check turns green once the client confirmed with their security code.
               const passed = c.passed || (steppedUp && c.name.startsWith("High-value"))
               const detail = passed && !c.passed ? "Confirmed with security code" : c.detail
               return (
-                <div key={c.name}>
-                  <span className={`mark ${passed ? "pass" : "fail"}`}>{passed ? "✓" : "✕"}</span>
+                <div className="c" key={c.name}>
+                  <span className={passed ? "pass" : "fail"}><Icon name={passed ? "check" : "x"} size={18} stroke={2.2} /></span>
                   <span>
                     {c.name}
-                    <span className="muted"> — {detail}</span>
+                    <span className="d">{detail}</span>
                   </span>
                 </div>
               )
             })}
             {simulation && (
-              <div>
-                <span className={`mark ${simulation.ok ? "pass" : "fail"}`}>{simulation.ok ? "✓" : "✕"}</span>
+              <div className="c">
+                <span className={simulation.ok ? "pass" : "fail"}><Icon name={simulation.ok ? "check" : "x"} size={18} stroke={2.2} /></span>
                 <span>
-                  Transaction simulation<span className="muted"> — {simulation.detail}</span>
+                  Transaction simulation
+                  <span className="d">{simulation.detail}</span>
                 </span>
               </div>
             )}
           </div>
         )}
-        {screening?.decision === "block" && <Alert kind="bad">Blocked: {screening.reasons.join("; ")}.</Alert>}
+        {screening?.decision === "block" && <Alert kind="bad"><b>Blocked.</b><span>{screening.reasons.join("; ")}.</span></Alert>}
         {screening?.decision === "review" && !steppedUp && (
           <Alert kind="warn">
-            <b>High-value transfer.</b>
-            <span>Confirm with your Swissquote security code before signing (step-up authentication).</span>
-            <div className="row">
-              <input
-                className="mono"
-                style={{ font: "inherit", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10 }}
-                placeholder="Security code (demo: 000000)"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-              />
+            <b>High-value transfer</b>
+            <span>Confirm with your Swissquote security code before signing.</span>
+            <div className="row" style={{ marginTop: 4 }}>
+              <div className="input" style={{ minHeight: 44, flex: 1.4 }}>
+                <input
+                  inputMode="numeric"
+                  placeholder="Code (demo: 000000)"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  style={{ padding: "10px 0", fontFamily: "var(--mono)" }}
+                />
+              </div>
               <Button
+                small
                 busy={stepBusy}
                 onClick={async () => {
                   setStepBusy(true)
@@ -365,30 +461,77 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
         )}
         {screening?.decision === "review" && steppedUp && <Alert kind="ok">High-value transfer confirmed with your security code.</Alert>}
         {err && <Alert kind="bad">{err}</Alert>}
-        <div className="row">
+        <div className="row split">
           <Button variant="ghost" onClick={() => setStage("form")} disabled={stage === "signing"}>
             Back
           </Button>
-          <Button variant="primary" onClick={sign} busy={stage === "signing"} disabled={blocked}>
-            Sign with passkey
+          <Button variant="primary" icon="faceid" onClick={sign} busy={stage === "signing"} disabled={blocked}>
+            {stage === "signing" ? "Signing…" : "Sign with passkey"}
           </Button>
         </div>
-      </div>
+      </section>
     )
   }
 
+  const tooMuch = balance !== undefined && Number(amount) > Number(balance)
   return (
-    <div className="card">
-      <Field label="Recipient" value={to} onChange={setTo} placeholder="0x…" hint="Try 0x000000000000000000000000000000000000bad1 to see a sanctions block." />
-      <Field label="Amount (USDC)" value={amount} onChange={setAmount} type="number" hint="Above 1,000 USDC the app asks for your security code first." />
+    <section className="card">
+      <div className="card-head">
+        <h2>Send USDC</h2>
+        <span className="pill ok"><Icon name="fuel" size={13} /> No gas needed</span>
+      </div>
+      <Field
+        label="To"
+        value={to}
+        onChange={setTo}
+        placeholder="0x…"
+        mono
+        action={
+          <button type="button" className="btn quiet sm" onClick={paste}>
+            <Icon name="paste" size={15} /> Paste
+          </button>
+        }
+      />
+      <Field
+        label="Amount"
+        value={amount}
+        onChange={setAmount}
+        type="number"
+        inputMode="decimal"
+        big
+        suffix="USDC"
+        action={
+          balance !== undefined ? (
+            <button type="button" className="chip" onClick={() => setAmount(String(Math.floor(Number(balance) * 100) / 100))}>
+              Max
+            </button>
+          ) : undefined
+        }
+        hint={
+          tooMuch
+            ? "More than your balance — the simulation will refuse it."
+            : `Available: ${balance !== undefined ? formatAmount(balance) : "—"} USDC · over ${HIGH_VALUE_THRESHOLD_USDC.toLocaleString("en-US")} needs your security code`
+        }
+      />
+      <div className="chips" aria-label="Demo shortcuts">
+        <button type="button" className="chip demo" onClick={() => setTo(DEMO_RECIPIENT)}>
+          <Icon name="send" size={13} /> Test recipient
+        </button>
+        <button type="button" className="chip demo" onClick={() => setTo(DEMO_SANCTIONED)}>
+          <Icon name="ban" size={13} /> Sanctioned address
+        </button>
+        <button type="button" className="chip demo" onClick={() => setAmount("1500")}>
+          <Icon name="alert" size={13} /> High-value amount
+        </button>
+      </div>
       {err && <Alert kind="bad">{err}</Alert>}
       <Button variant="primary" onClick={review} busy={busy} block>
         Review transfer
       </Button>
-      <p className="muted">
-        No USDC yet? Get test USDC for this address at faucet.circle.com (Base Sepolia).
+      <p className="hint center-text">
+        Need test USDC? faucet.circle.com → Base Sepolia → paste your address.
       </p>
-    </div>
+    </section>
   )
 }
 
@@ -414,29 +557,32 @@ async function simulateTransfer(from: Address, to: Address, amount: string) {
 
 function Receive({ address }: { address: Address }) {
   const [qr, setQr] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
   useEffect(() => {
-    QRCode.toDataURL(address, { margin: 1, width: 280, color: { dark: "#14213d", light: "#ffffff" } }).then(setQr).catch(() => {})
+    QRCode.toDataURL(address, { margin: 0, width: 400, color: { dark: "#0f1b2d", light: "#ffffff" } }).then(setQr).catch(() => {})
   }, [address])
   return (
-    <div className="card" style={{ alignItems: "center", textAlign: "center" }}>
-      <h2>Receive USDC or ETH on Base</h2>
-      {qr && <img src={qr} alt="QR code of your Vault address" width={240} height={240} style={{ borderRadius: 12 }} />}
-      <span className="mono">{address}</span>
-      <Button
-        variant="ghost"
-        onClick={() => navigator.clipboard.writeText(address).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-      >
-        {copied ? "Copied" : "Copy address"}
-      </Button>
-      <p className="muted">Transfers from your Swissquote account arrive here directly: the bank already knows this wallet is yours.</p>
-    </div>
+    <section className="card" style={{ alignItems: "stretch" }}>
+      <div className="card-head">
+        <h2>Receive on Base</h2>
+        <span className="pill">USDC · ETH</span>
+      </div>
+      <div className="qr-wrap">
+        {qr ? <img src={qr} alt="QR code of your Vault address" width={200} height={200} /> : <div style={{ width: 200, height: 200 }} />}
+      </div>
+      <AddressGroups address={address} />
+      <CopyButton text={address} label="Copy address" small={false} />
+      <Alert kind="info">
+        Transfers from your Swissquote account arrive here directly: the bank already knows this wallet is yours.
+      </Alert>
+    </section>
   )
 }
 
 // ---------------------------------------------------------------------------
 // Approved dApps: allowlist + simulated interaction (a real on-chain approve)
 // ---------------------------------------------------------------------------
+
+const DAPP_COLORS: Record<string, string> = { uniswap: "#d6337a", aave: "#6b5cc4", morpho: "#2a6fdb" }
 
 function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => void }) {
   const [dapps, setDapps] = useState<ApprovedDapp[]>([])
@@ -505,68 +651,96 @@ function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => vo
 
   if (connecting) {
     return (
-      <div className="card">
-        <h2>{connecting.name} wants to connect</h2>
-        <p>{connecting.note}</p>
-        <div className="list">
-          <div className="item"><span>Action</span><span className="right">Allow {connecting.name} to use up to 1 USDC</span></div>
-          <div className="item"><span>Contract</span><span className="right mono">{short(connecting.contracts[0] ?? "", 8)}</span></div>
-          <div className="item"><span>Status</span><span className="right pill ok">Approved by Swissquote</span></div>
-          <div className="item"><span>Network fee</span><span className="right pill ok">Paid by Swissquote</span></div>
+      <section className="card">
+        <div className="card-head">
+          <div className="left" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="avatar-letter" style={{ background: DAPP_COLORS[connecting.id] ?? "var(--ink)" }}>{connecting.name[0]}</span>
+            <div>
+              <h2>{connecting.name} wants to connect</h2>
+              <span className="muted">{connecting.category}</span>
+            </div>
+          </div>
         </div>
+        <p className="muted" style={{ fontSize: 14 }}>{connecting.note}</p>
+        <div className="list kv">
+          <div className="item"><span>Permission</span><span className="right" style={{ fontWeight: 600 }}>Use up to 1 USDC</span></div>
+          <div className="item"><span>Contract</span><span className="right mono">{short(connecting.contracts[0] ?? "", 8)}</span></div>
+          <div className="item"><span>Status</span><span className="right pill ok"><Icon name="check" size={13} /> Approved by Swissquote</span></div>
+          <div className="item"><span>Network fee</span><span className="right pill ok"><Icon name="fuel" size={13} /> Paid by Swissquote</span></div>
+        </div>
+        <Alert kind="info">A limited approval: {connecting.name} can never touch more than 1 USDC, and you can revoke it any time.</Alert>
         {done && (
           <Alert kind="ok">
-            Done. <a href={EXPLORER_TX(done)} target="_blank" rel="noreferrer">View on Basescan</a>
+            <b>Connected.</b>
+            <a href={EXPLORER_TX(done)} target="_blank" rel="noreferrer">View on Basescan</a>
           </Alert>
         )}
         {err && <Alert kind="bad">{err}</Alert>}
-        <div className="row">
-          <Button variant="ghost" onClick={() => { setConnecting(null); setDone(null) }}>Back</Button>
+        <div className="row split">
+          <Button variant="ghost" onClick={() => { setConnecting(null); setDone(null) }}>{done ? "Done" : "Back"}</Button>
           {!done && (
-            <Button variant="primary" busy={busy} onClick={() => approveOneUsdc(connecting)}>
+            <Button variant="primary" icon="faceid" busy={busy} onClick={() => approveOneUsdc(connecting)}>
               Sign with passkey
             </Button>
           )}
         </div>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="card">
-      <h2>Approved apps</h2>
-      <p className="muted">Reviewed by Swissquote Digital Assets. Interactions are simulated before you sign.</p>
+    <section className="card">
+      <div className="card-head">
+        <h2>Approved apps</h2>
+        <span className="pill"><Icon name="shieldCheck" size={13} /> Reviewed by Swissquote</span>
+      </div>
       <div className="list">
         {dapps.map((d) => {
           const allowed = Number(allowances[d.id] ?? 0)
           return (
             <div className="item" key={d.id}>
-              <div>
-                <div className="name">{d.name}</div>
-                <div className="sub">
-                  {d.category}
-                  {allowed > 0 ? ` · connected, may use up to ${allowed} USDC` : ""}
+              <div className="left">
+                <span className="avatar-letter" style={{ background: DAPP_COLORS[d.id] ?? "var(--ink)" }}>{d.name[0]}</span>
+                <div>
+                  <div className="name">{d.name}</div>
+                  <div className="sub">{allowed > 0 ? <span style={{ color: "var(--ok)", fontWeight: 600 }}>Connected · up to {allowed} USDC</span> : d.category}</div>
                 </div>
               </div>
               {allowed > 0 ? (
-                <Button variant="ghost" busy={revoking === d.id} onClick={() => revoke(d)}>Revoke</Button>
+                <Button variant="ghost" small busy={revoking === d.id} onClick={() => revoke(d)}>Revoke</Button>
               ) : (
-                <Button variant="ghost" onClick={() => setConnecting(d)}>Connect</Button>
+                <Button variant="ghost" small onClick={() => setConnecting(d)}>Connect</Button>
               )}
             </div>
           )
         })}
+        {dapps.length === 0 && <p className="muted">Loading the approved list…</p>}
       </div>
       {err && !connecting && <Alert kind="bad">{err}</Alert>}
-      <Field label="Open another app" value={custom} onChange={setCustom} placeholder="https://some-new-yield-farm.xyz" />
-      <Button variant="ghost" onClick={tryCustom} block>Open</Button>
-      {blockedMsg && <Alert kind="bad">{blockedMsg}</Alert>}
-    </div>
+      <hr className="divider" />
+      <Field
+        label="Open another app"
+        value={custom}
+        onChange={setCustom}
+        placeholder="https://some-new-yield-farm.xyz"
+        action={
+          <button type="button" className="btn quiet sm" onClick={tryCustom}>
+            Open
+          </button>
+        }
+      />
+      <div className="chips">
+        <button type="button" className="chip demo" onClick={() => { setCustom("https://free-usdc-airdrop.xyz"); setBlockedMsg(null) }}>
+          <Icon name="alert" size={13} /> Try a fake airdrop site
+        </button>
+      </div>
+      {blockedMsg && <Alert kind="bad"><b>Blocked.</b><span>{blockedMsg}</span></Alert>}
+    </section>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Security: where the keys live + the "lost phone" entry point
+// Security: ownership proof, where the keys live, the "lost phone" entry point
 // ---------------------------------------------------------------------------
 
 function Security({
@@ -601,44 +775,67 @@ function Security({
   }
 
   return (
-    <div className="card">
-      <h2>Prove ownership to Swissquote</h2>
-      <p className="muted">
-        Swiss rules require Swissquote to verify that an external wallet belongs to its client. Vault proves it in one tap:
-        the bank sends a challenge, your passkey signs it, and the bank checks the signature on-chain.
-      </p>
-      {proof.state === "ok" && <Alert kind="ok"><b>Ownership verified.</b><span>{proof.detail}</span></Alert>}
-      {proof.state === "fail" && <Alert kind="bad">{proof.detail}</Alert>}
-      <Button variant="primary" busy={proof.state === "busy"} onClick={proveOwnership} block>
-        Sign ownership proof with passkey
-      </Button>
-      <hr style={{ border: 0, borderTop: "1px solid var(--line)", width: "100%" }} />
-      <h2>Where your keys live</h2>
-      <div className="list">
-        <div className="item">
-          <div><div className="name">Passkey “{s.passkeyName}”</div><div className="sub">Secure enclave on this phone. Moves funds.</div></div>
-          <span className="pill ok">you</span>
+    <>
+      <section className="card">
+        <div className="card-head">
+          <h2>Where your keys live</h2>
+          <span className="pill ok dot">Protected</span>
         </div>
-        <div className="item">
-          <div><div className="name">Backup key</div><div className="sub mono">{short(s.backupAddress, 8)}</div></div>
-          <span className="pill">you, offline</span>
+        <div className="list">
+          <div className="item">
+            <div className="left">
+              <span className="ico dark"><Icon name="phone" size={18} /></span>
+              <div><div className="name">This phone’s passkey</div><div className="sub">“{s.passkeyName}” · moves funds</div></div>
+            </div>
+            <span className="pill ok">Full control</span>
+          </div>
+          <div className="item">
+            <div className="left">
+              <span className="ico"><Icon name="key" size={18} /></span>
+              <div><div className="name">Your backup key</div><div className="sub mono">{short(s.backupAddress, 6)}</div></div>
+            </div>
+            <span className="pill">Recovery only</span>
+          </div>
+          <div className="item">
+            <div className="left">
+              <span className="ico"><Icon name="bank" size={18} /></span>
+              <div><div className="name">Swissquote guardian</div><div className="sub mono">{short(s.bankGuardianAddress, 6)}</div></div>
+            </div>
+            <span className="pill">Recovery only</span>
+          </div>
         </div>
-        <div className="item">
-          <div><div className="name">Swissquote guardian</div><div className="sub mono">{short(s.bankGuardianAddress, 8)}</div></div>
-          <span className="pill">bank · recovery only</span>
+        <p className="muted">
+          The recovery pair is bound on-chain to one function: replacing your passkey. It can’t send tokens, and every
+          recovery waits out a delay during which this phone is alerted and can cancel it.
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <h2>Prove ownership to Swissquote</h2>
+          <span className="pill">{bankSession.clientId} · KYC</span>
         </div>
-        <div className="item">
-          <div><div className="name">Linked client</div><div className="sub">{bankSession.clientId} (KYC verified)</div></div>
-          <span className="pill">ownership</span>
-        </div>
-      </div>
-      <p className="muted">
-        Recovery (bank + backup) is bound on-chain to one function: replacing your passkey. It can’t send tokens, and
-        every recovery waits out a delay during which this phone is alerted and can cancel it.
-      </p>
-      <Button variant="ghost" onClick={onLostDevice} block>
-        Simulate losing this phone
-      </Button>
-    </div>
+        <p className="muted">
+          Swiss rules require the bank to verify that an external wallet belongs to its client. One tap: Swissquote sends a
+          challenge, your passkey signs it, and the bank checks the signature on-chain.
+        </p>
+        {proof.state === "ok" && <Alert kind="ok"><b>Ownership verified</b><span>{proof.detail}</span></Alert>}
+        {proof.state === "fail" && <Alert kind="bad">{proof.detail}</Alert>}
+        <Button variant="primary" icon="faceid" busy={proof.state === "busy"} onClick={proveOwnership} block>
+          Sign ownership proof
+        </Button>
+      </section>
+
+      <section className="card flat">
+        <h2>Lost your phone?</h2>
+        <p className="muted">
+          Recover on a new device with your Swissquote login and your backup key. For the demo, this makes this device
+          forget the Vault.
+        </p>
+        <Button variant="ghost" icon="recover" onClick={onLostDevice} block>
+          Simulate losing this phone
+        </Button>
+      </section>
+    </>
   )
 }

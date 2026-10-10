@@ -9,7 +9,7 @@ import {
   type Wallet,
   type WalletSession,
 } from "./lib/wallet"
-import { Alert, Button, Field, errorMessage, uniquePasskeyName } from "./ui"
+import { Alert, Button, Field, Icon, errorMessage, uniquePasskeyName } from "./ui"
 import { Dashboard } from "./screens/Dashboard"
 import { Recover } from "./screens/Recover"
 import { BackupKit } from "./screens/BackupKit"
@@ -77,15 +77,22 @@ export default function App() {
   }
 
   return (
-    <div className="phone">
+    <div className="stage">
+      <StageAside />
+      <div className="phone">
       <header className="topbar">
         <div className="brand">
-          <span className="dot" />
-          Vault <small>self-custody · prototype for Swissquote</small>
+          <span className="mark" />
+          <div>
+            <div className="word">Vault</div>
+            <span className="by">Self-custody · prototype for Swissquote</span>
+          </div>
         </div>
         {bankSession && (
-          <button className="btn ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={signOut}>
-            {bankSession.clientId} · sign out
+          <button className="who" onClick={signOut} title="Sign out">
+            <span className="avatar">{bankSession.clientId.slice(0, 1)}</span>
+            {bankSession.clientId}
+            <Icon name="logout" size={15} />
           </button>
         )}
       </header>
@@ -93,10 +100,9 @@ export default function App() {
       {error && (
         <div className="screen">
           <Alert kind="bad">
-            {error}
-            <span className="muted">
-              Is the Swissquote mock backend running? Start it with <code>npm run dev</code>.
-            </span>
+            <b>Can’t reach the Swissquote service.</b>
+            <span>{error}</span>
+            <span>Is the mock backend running? Start it with <code>npm run dev</code>.</span>
           </Alert>
           <Button
             variant="ghost"
@@ -111,8 +117,9 @@ export default function App() {
       )}
 
       {!error && screen.name === "boot" && (
-        <div className="screen">
-          <p className="muted">Loading…</p>
+        <div className="screen center" style={{ alignItems: "center" }}>
+          <span className="spinner" style={{ borderColor: "var(--line)", borderTopColor: "var(--ink)", width: 24, height: 24 }} />
+          <p className="muted">Opening your Vault…</p>
         </div>
       )}
 
@@ -181,13 +188,46 @@ export default function App() {
           }
         />
       )}
+      </div>
     </div>
+  )
+}
+
+/** Laptop-only side panel: explains the screen to whoever is watching the demo. */
+export function StageAside() {
+  return (
+    <aside className="aside">
+      <div className="mark-lg">
+        <span className="mark" /> Swissquote Vault
+      </div>
+      <h2>Their keys. Their control. One tap from their bank.</h2>
+      <p>A self-custody wallet Swissquote could launch: the client's Face ID is the key, Swissquote can only help recover a lost phone.</p>
+      <div className="legend">
+        <div className="legend-row">
+          <span className="ico dark"><Icon name="phone" /></span>
+          <div><b>Passkey on the phone</b>Full control. Signs every transfer. Never leaves the secure chip.</div>
+        </div>
+        <div className="legend-row">
+          <span className="ico"><Icon name="key" /></span>
+          <div><b>Client backup key</b>Recovery only. Held offline; Swissquote never sees it.</div>
+        </div>
+        <div className="legend-row">
+          <span className="ico"><Icon name="bank" /></span>
+          <div><b>Swissquote guardian</b>Recovery only, after identity check and a waiting period the client can veto.</div>
+        </div>
+      </div>
+      <div className="meta">
+        <span className="pill dot ok">Live on Base Sepolia</span>
+        <span className="pill">Gas paid by Swissquote</span>
+        <span className="pill">ERC-4337 · passkeys</span>
+      </div>
+    </aside>
   )
 }
 
 // ---------------------------------------------------------------------------
 
-function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void }) {
+export function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void }) {
   const [clientId, setClientId] = useState("demo")
   const [password, setPassword] = useState("demo")
   const [otp, setOtp] = useState("000000")
@@ -214,25 +254,34 @@ function BankLogin({ onLoggedIn }: { onLoggedIn: (s: BankSession) => void }) {
         submit()
       }}
     >
-      <div>
+      <div className="title">
+        <span className="ico lg dark"><Icon name="bank" size={26} /></span>
         <h1>Sign in to Swissquote</h1>
         <p>Your Vault is linked to your bank account. Sign in the way you already do.</p>
       </div>
       <Field label="Client number" value={clientId} onChange={setClientId} autoFocus />
       <Field label="Password" value={password} onChange={setPassword} type="password" />
-      <Field label="Security code (2FA)" value={otp} onChange={setOtp} hint="Demo backend: password “demo”, code “000000”" />
+      <Field label="Security code" value={otp} onChange={setOtp} inputMode="numeric" />
+      <div className="demo-note">
+        <Icon name="info" size={16} />
+        <span>
+          Demo bank: any client number, password <code>demo</code>, code <code>000000</code>
+        </span>
+      </div>
       {err && <Alert kind="bad">{err}</Alert>}
       <Button type="submit" variant="primary" busy={busy} block>
         Sign in
       </Button>
-      <div className="footer-note">Identity and 2FA are simulated. See docs/mocks.md.</div>
+      <div className="footer-note">
+        <Icon name="lock" size={14} /> Identity and 2FA are simulated in this prototype
+      </div>
     </form>
   )
 }
 
 // ---------------------------------------------------------------------------
 
-function Onboard({
+export function Onboard({
   bankSession,
   guardian,
   existing,
@@ -299,56 +348,67 @@ function Onboard({
   if (existing) {
     return (
       <div className="screen">
-        <div>
+        <div className="title">
+          <span className="ico lg"><Icon name="faceid" size={28} /></span>
           <h1>Welcome back</h1>
           <p>Swissquote has a Vault on file for you, but this device isn’t set up yet.</p>
         </div>
         <div className="card flat">
-          <span className="muted">Your Vault</span>
+          <span className="section-label">Your Vault</span>
           <span className="mono">{existing.walletAddress}</span>
         </div>
         {err && <Alert kind="bad">{err}</Alert>}
-        <Button variant="primary" busy={busy === "login"} onClick={login} block>
+        <Button variant="primary" icon="faceid" busy={busy === "login"} onClick={login} block>
           Unlock with passkey
         </Button>
-        <p className="muted">Works if this device (or your iCloud / Google passkeys) still has the passkey “{existing.passkeyName}”.</p>
-        <Button variant="ghost" onClick={recover} block>
+        <p className="hint center-text">
+          Works if this device, or your iCloud / Google passkeys, still has “{existing.passkeyName}”.
+        </p>
+        <hr className="divider" />
+        <Button variant="ghost" icon="recover" onClick={recover} block>
           I lost my phone — recover access
         </Button>
-        <div className="footer-note">Recovery needs your backup key and a waiting period. Swissquote cannot do it alone.</div>
+        <div className="footer-note">
+          <Icon name="shield" size={14} /> Recovery needs your backup key and a waiting period
+        </div>
       </div>
     )
   }
 
   return (
     <div className="screen">
-      <div>
+      <div className="title">
+        <span className="ico lg dark"><Icon name="faceid" size={28} /></span>
         <h1>Create your Vault</h1>
-        <p>
-          A crypto wallet only you control, one tap from your Swissquote account. Your key is a passkey: it lives in
-          this phone’s secure chip and never leaves it.
-        </p>
+        <p>A crypto wallet only you control, one tap from your Swissquote account. No seed phrase: your Face ID is the key.</p>
       </div>
-      <div className="steps">
-        <div className="step">
-          <span className="n">1</span>
-          <span>Create a passkey (Face ID / Touch ID)</span>
+      <div className="feature-list">
+        <div className="feature">
+          <span className="ico"><Icon name="phone" /></span>
+          <div><b>Your passkey is the key</b><span>Created in this phone’s secure chip. It never leaves it.</span></div>
         </div>
-        <div className="step">
-          <span className="n">2</span>
-          <span>Save your backup kit somewhere safe</span>
+        <div className="feature">
+          <span className="ico"><Icon name="key" /></span>
+          <div><b>A backup only you hold</b><span>Lose the phone? Backup key + Swissquote login restore access.</span></div>
         </div>
-        <div className="step">
-          <span className="n">3</span>
-          <span>Start using it — no gas tokens needed</span>
+        <div className="feature">
+          <span className="ico"><Icon name="fuel" /></span>
+          <div><b>No gas tokens needed</b><span>Swissquote pays the network fees.</span></div>
         </div>
       </div>
-      <Field label="Passkey name" value={passkeyName} onChange={setPasskeyName} hint="How this passkey shows up in your device's passkey manager." />
+      <details className="adv">
+        <summary>Passkey name: {passkeyName} · change</summary>
+        <Field label="Passkey name" value={passkeyName} onChange={setPasskeyName} hint="How this passkey shows up in your device’s passkey manager." />
+      </details>
       {err && <Alert kind="bad">{err}</Alert>}
-      <Button variant="primary" busy={busy === "create"} onClick={create} block>
-        Create with passkey
-      </Button>
-      <div className="footer-note">Swissquote never sees your passkey or your backup key.</div>
+      <div className="bottom">
+        <Button variant="primary" icon="faceid" busy={busy === "create"} onClick={create} block>
+          Create with passkey
+        </Button>
+        <div className="footer-note">
+          <Icon name="lock" size={14} /> Swissquote never sees your passkey or your backup key
+        </div>
+      </div>
     </div>
   )
 }

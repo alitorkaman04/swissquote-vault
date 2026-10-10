@@ -20,13 +20,17 @@ with a one-tap cancel on the old device.
 
 ## What it looks like
 
-| Create with a passkey | Review before signing | Approved apps only | Attacker's recovery cancelled |
-| --- | --- | --- | --- |
-| ![Create](docs/screenshots/create.png) | ![Review](docs/screenshots/review.png) | ![Blocked dApp](docs/screenshots/blocked-dapp.png) | ![Cancelled](docs/screenshots/cancelled.png) |
+| Create with Face ID | Backup kit, shown once | Home: balance, actions, protection |
+| --- | --- | --- |
+| ![Create](docs/screenshots/create.png) | ![Backup kit](docs/screenshots/backup-kit.png) | ![Home](docs/screenshots/dashboard.png) |
 
-| Backup kit, shown once | Gasless USDC sent | Connect a dApp (limited approval) | Old phone after recovery |
-| --- | --- | --- | --- |
-| ![Backup kit](docs/screenshots/backup-kit.png) | ![Dashboard](docs/screenshots/dashboard.png) | ![Uniswap](docs/screenshots/uniswap.png) | ![Replaced](docs/screenshots/replaced.png) |
+| Checks before every signature | Approved apps only | Receive |
+| --- | --- | --- |
+| ![Review](docs/screenshots/review.png) | ![Blocked dApp](docs/screenshots/blocked-dapp.png) | ![Receive](docs/screenshots/receive.png) |
+
+| Lost phone: recovery | Old phone: "someone is recovering" + veto | Where the keys live, ownership proof |
+| --- | --- | --- |
+| ![Recover](docs/screenshots/recover.png) | ![Recovery alert](docs/screenshots/banner.png) | ![Security](docs/screenshots/security.png) |
 
 ## For judges: where each criterion is answered
 
