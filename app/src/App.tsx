@@ -9,7 +9,7 @@ import {
   type Wallet,
   type WalletSession,
 } from "./lib/wallet"
-import { Alert, Button, Field, errorMessage } from "./ui"
+import { Alert, Button, Field, errorMessage, uniquePasskeyName } from "./ui"
 import { Dashboard } from "./screens/Dashboard"
 import { Recover } from "./screens/Recover"
 import { BackupKit } from "./screens/BackupKit"
@@ -249,7 +249,7 @@ function Onboard({
 }) {
   const [busy, setBusy] = useState<"create" | "login" | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const defaultName = `${bankSession.clientId}-${new Date().toISOString().slice(0, 10)}`
+  const defaultName = uniquePasskeyName(bankSession.clientId)
   const [passkeyName, setPasskeyName] = useState(defaultName)
 
   async function create() {

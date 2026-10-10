@@ -4,7 +4,7 @@ import { bank, type BankSession, type RecoveryRequest } from "../lib/bank"
 import { EXPLORER_TX, RECOVERY_DELAY_SECONDS } from "../lib/config"
 import { adoptRecoveredSession, approveWithBackupKey, prepareNewPasskey, submitRecovery, type buildRecoveryClient } from "../lib/recovery"
 import type { WalletSession } from "../lib/wallet"
-import { Alert, Button, Field, errorMessage, short } from "../ui"
+import { Alert, Button, Field, errorMessage, short, uniquePasskeyName } from "../ui"
 
 /**
  * Lost-phone recovery, as the client experiences it on a NEW device:
@@ -28,7 +28,7 @@ export function Recover({
   onBack: () => void
 }) {
   const [step, setStep] = useState(1)
-  const [newName, setNewName] = useState(`${bankSession.clientId}-${new Date().toISOString().slice(0, 10)}-new`)
+  const [newName, setNewName] = useState(uniquePasskeyName(bankSession.clientId))
   const [prepared, setPrepared] = useState<{ callData: Hex; serialized: string } | null>(null)
   const [request, setRequest] = useState<RecoveryRequest | null>(null)
   const [backupKey, setBackupKey] = useState("")

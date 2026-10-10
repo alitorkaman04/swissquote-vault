@@ -106,3 +106,10 @@ export function errorMessage(e: unknown) {
   }
   return [...new Set(parts)].join(" · ").slice(0, 400)
 }
+
+/** A passkey name that is unique per device and moment, e.g. "demo-1010-1207" (month-day-hour-minute). */
+export function uniquePasskeyName(clientId: string) {
+  const d = new Date()
+  const two = (n: number) => String(n).padStart(2, "0")
+  return `${clientId}-${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}`
+}
