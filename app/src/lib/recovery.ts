@@ -118,7 +118,10 @@ export async function submitRecovery(
 
   // Stub signature (approvals + dummy final sig) so gas estimation and the paymaster see a realistic size.
   const stub = await account.getStubSignature({ callData, signature: encodedApprovals } as never)
-  const userOperation = await client.prepareUserOperation({ account, callData, signature: stub } as never)
+  const userOperation = (await client.prepareUserOperation({ account, callData, signature: stub } as never)) as Record<
+    string,
+    unknown
+  >
 
   // Final signature: the backup key signs the userOpHash, appended after the approvals.
   const signature = await account.signUserOperation({ ...userOperation, signature: encodedApprovals } as never)
