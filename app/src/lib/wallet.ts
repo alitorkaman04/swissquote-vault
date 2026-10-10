@@ -323,8 +323,37 @@ export async function sendCalls(wallet: Wallet, calls: { to: Address; value?: bi
   return { userOpHash: hash, txHash: receipt.receipt.transactionHash }
 }
 
+/**
+ * Activate a freshly created wallet: deploys the smart account AND installs the recovery
+ * validator in one sponsored operation, so the wallet is recoverable from day one
+ * (even if the client only ever receives funds). The call itself is a harmless 0-value
+ * transfer to the bank's guardian address.
+ */
+export async function activateWallet(wallet: Wallet) {
+  if (await isDeployed(wallet.session.address)) return null
+  return sendCalls(wallet, [{ to: wallet.session.bankGuardianAddress, value: 0n, data: "0x" }])
+}
+
 /** Has the account been deployed (i.e. has it sent at least one operation)? */
 export async function isDeployed(address: Address) {
   const code = await publicClient.getCode({ address })
   return !!code && code !== "0x"
+}
+
+/** Sign an arbitrary message with the passkey (ERC-1271). Used for the ownership proof and the recovery veto. */
+export async function signMessageWithPasskey(wallet: Wallet, message: string): Promise<Hex> {
+  return wallet.client.signMessage({ account: wallet.client.account!, message })
+}
+
+/** USDC allowance granted to a dApp contract (read from chain). */
+export async function getUsdcAllowance(owner: Address, spender: Address) {
+  const a = await publicClient.readContract({ address: USDC_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [owner, spender] })
+  return formatUnits(a, USDC_DECIMALS)
+}
+
+/** Revoke a dApp's USDC allowance (approve 0). */
+export async function revokeUsdcAllowance(wallet: Wallet, spender: Address) {
+  return sendCalls(wallet, [
+    { to: USDC_ADDRESS, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [spender, 0n] }) },
+  ])
 }

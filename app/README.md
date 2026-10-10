@@ -18,6 +18,9 @@ npm run dev                 # starts the web app (http://localhost:5173) and the
 Demo login for the mock Swissquote backend: client `demo`, password `demo`, 2FA code `000000`.
 Test USDC for Base Sepolia: https://faucet.circle.com
 
+**Keep `app/server/data.json`.** It holds the mock bank's guardian key: deleting it makes every wallet created so far
+unrecoverable (their on-chain recovery config names that key). To pin the key explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` in `.env`.
+
 ## Demo script (what the judges see)
 
 1. **Sign in to Swissquote** (mock e-banking).

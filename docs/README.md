@@ -10,3 +10,4 @@
 | `legal-swiss.md` | Swiss custody rules, ownership verification, FINMA / DLT Act, with sources | pitch |
 | `business-case.md` | Retention, revenue, costs, new clients, with numbers | pitch |
 | `pitch.md` | Slide outline and 3-minute script | pitch |
+| `submission.md` | Paste-ready DoraHacks text | pitch |

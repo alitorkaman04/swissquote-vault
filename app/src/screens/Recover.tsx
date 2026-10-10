@@ -82,7 +82,7 @@ export function Recover({
   const stepFinish = () =>
     run(async () => {
       if (!request || !backupSig || !prepared) throw new Error("missing state")
-      const { signature: bankSignature } = await bank.signRecovery(request.id)
+      const { signature: bankSignature } = await bank.signRecovery(request.id, bankSession.token)
       const { txHash } = await submitRecovery(backupSig.client, prepared.callData, [backupSig.signature, bankSignature])
       setTxHash(txHash)
       setStep(4)
@@ -156,8 +156,8 @@ export function Recover({
             <>
               <div className="countdown">{secondsLeft}s</div>
               <p className="muted" style={{ textAlign: "center" }}>
-                If the old phone was stolen, its holder would need your Face ID to cancel — they can’t. If it’s you on the
-                old phone, you can cancel from there.
+                A thief holding your old phone would need your Face ID or your e-banking login to cancel — they have
+                neither. If it’s you on the old phone, you can cancel from there.
               </p>
             </>
           )}

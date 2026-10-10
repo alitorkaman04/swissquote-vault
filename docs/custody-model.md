@@ -18,7 +18,7 @@ The backup key and the guardian key form a **2-of-2 weighted validator** (weight
 
 | Actor | Move funds | Replace the passkey | Notes |
 | --- | --- | --- | --- |
-| Client with phone | ✅ | ✅ (can also rotate guardians) | Normal operation |
+| Client with phone | ✅ | ✅ (can also rotate guardians via `renew`; not in the prototype UI) | Normal operation |
 | Client without phone (lost) | ❌ | ✅ with backup key + Swissquote login + delay | Recovery path |
 | Swissquote alone | ❌ | ❌ | Holds one half of a recovery-only key pair |
 | Swissquote + stolen backup kit | ⚠️ only indirectly, by replacing the passkey | ⚠️ only after the delay, and the client's devices are notified and can cancel | See threat model T6 / T8 |
@@ -38,7 +38,7 @@ The backup key and the guardian key form a **2-of-2 weighted validator** (weight
 | Create | Client signs in to Swissquote → creates a passkey (Face ID) → smart-account address is derived from it → backup key generated on-device and shown once → wallet linked to the KYC'd client record | `app/src/lib/wallet.ts` `createWallet` |
 | Authenticate | Every signature requires the passkey, i.e. biometric user verification on the device. Re-login on a new device = passkey from the OS passkey manager | `loginWallet`, `resumeWallet` |
 | Sign | Gasless ERC-4337 user operation signed by the passkey; Swissquote's paymaster pays the network fee | `sendUsdc`, `sendCalls` |
-| First transaction | Deploys the account and installs the recovery validator + recovery action in the same operation | `pluginMigrations` in `buildEverydayClient` |
+| Activate | Right after creation, one sponsored operation deploys the account and installs the recovery validator + recovery action, so the wallet is recoverable from day one. If it fails, the same happens with the first transfer | `activateWallet`, `pluginMigrations` in `buildEverydayClient` |
 | Lose access | Phone lost / wiped | – |
 | Recover | New device: new passkey → Swissquote login → recovery request (old devices notified, delay starts) → backup key approves → after the delay Swissquote approves → `doRecovery` installs the new passkey as sudo validator. **Same address, same funds** | `app/src/lib/recovery.ts`, `server/index.ts` |
 | Veto | During the delay, any of the client's existing devices shows "Someone is recovering this Vault" with a one-tap cancel | `Dashboard.tsx` banner, `/recovery/:id/cancel` |

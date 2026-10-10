@@ -14,7 +14,7 @@
 | T5 | **Stolen backup kit** | Recover to their own passkey | Needs a Swissquote login (identity + 2FA) and survives the veto window | None alone |
 | T6 | **Backup kit + Swissquote credentials** | Full recovery takeover | 48 h waiting period; push notification to all of the client's devices; one-tap cancel; Swissquote fraud checks before the guardian signs | Client unreachable for 48 h. This is the "two independent compromises" case |
 | T7 | **Rogue Swissquote employee** | Move funds or take over | Guardian key alone can't sign anything except half of a recovery; can't move funds at all; HSM with four-eyes access; recovery still triggers notification + delay | Collusion with a stolen backup kit = T6 |
-| T8 | **Swissquote breached (guardian key stolen)** | Take over accounts | Guardian key is half of a 2-of-2; useless without each client's individual backup key. Client can rotate the guardian with the passkey (`renew`) | – |
+| T8 | **Swissquote breached (guardian key stolen)** | Take over accounts | Guardian key is half of a 2-of-2; useless without each client's individual backup key. Client can rotate the guardian with the passkey (`renew`; not in the prototype UI) | – |
 | T9 | **Swissquote unavailable / insolvent** | – (availability) | Funds are in the client's own on-chain account, not on Swissquote's balance sheet. Passkey keeps working with any ERC-4337 bundler | Recovery degraded until the client rotates to a new guardian; gas no longer sponsored |
 | T10 | **Malicious dApp / phishing transaction** | Trick the client into an approval or transfer | Approved-dApp list; unknown dApps blocked; human-readable review; on-chain simulation before signing | Approved dApp itself compromised |
 | T11 | **Phishing website** | Get a signature from the passkey | WebAuthn origin binding: the passkey only signs for Swissquote's domain | – |
@@ -22,15 +22,18 @@
 | T13 | **Passkey server compromised** | Steal keys | It stores public keys only | Availability of login-by-name. Production: Swissquote self-hosts |
 | T14 | **Smart-contract bug** | Exploit the account | Only audited ZeroDev Kernel v3.1 + plugin contracts; no custom Solidity | Upstream bug |
 | T15 | **Gas-sponsorship abuse** | Drain Swissquote's paymaster | Paymaster policies (rate, per-account, approved contracts) | Bounded by policy |
+| T16 | **Attacker spams cancel to block a legitimate recovery** | Deny the client recovery | A veto must be signed by a device holding the current passkey (ERC-1271, verified on-chain) or come from the client's authenticated e-banking session | Attacker with the client's bank login can delay recovery; the client reports it to Swissquote |
 
 ## How recovery tells the client from an attacker
 
-The bonus criterion asks for a recovery flow that distinguishes a legitimate user from an attacker who compromised the phone or email. Ours requires **three independent factors**, plus time:
+The bonus criterion asks for a recovery flow that distinguishes a legitimate user from an attacker who compromised the phone or email. Ours requires **three independent factors plus time**:
 
 1. **Who you are:** Swissquote e-banking identity (KYC'd, 2FA).
 2. **What you kept:** the backup key, which only the client has (Swissquote never sees it).
 3. **What you still hold:** if the client still has *any* old device, they see the recovery and can cancel it.
 4. **Time:** a waiting period long enough for the client to notice.
+
+Note on the veto: in the prototype a veto is accepted when signed by the current passkey (verified on-chain) **or** sent from the client's authenticated e-banking session (fallback). A thief with the old phone has neither.
 
 | Compromised | Can recover? |
 | --- | --- |

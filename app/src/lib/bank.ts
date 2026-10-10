@@ -50,11 +50,27 @@ export const bank = {
   pendingForWallet: (walletAddress: Address) =>
     api<RecoveryRequest | null>(`/recovery/pending?walletAddress=${walletAddress}`),
 
-  /** Old device vetoes the recovery (in production: signed by the old passkey). */
-  cancelRecovery: (id: string) => api<RecoveryRequest>(`/recovery/${id}/cancel`, { method: "POST" }),
+  /** Old device vetoes the recovery. Strong path: signed by the current passkey; fallback: e-banking session. */
+  cancelRecovery: (id: string, body: { token: string; message?: string; signature?: Hex }) =>
+    api<RecoveryRequest>(`/recovery/${id}/cancel`, { method: "POST", body: JSON.stringify(body) }),
+  cancelMessage: (id: string) => `Cancel Vault recovery ${id}`,
+
+  /** Step-up authentication for high-value transfers (mock 2FA). */
+  stepUp: (token: string, otp: string) =>
+    api<{ ok: true; until: number }>("/auth/stepup", { method: "POST", body: JSON.stringify({ token, otp }) }),
+
+  /** Wallet ownership proof: bank challenge -> passkey signs (ERC-1271) -> bank verifies on-chain. */
+  ownershipChallenge: (token: string) =>
+    api<{ nonce: string; message: string }>("/ownership/challenge", { method: "POST", body: JSON.stringify({ token }) }),
+  ownershipVerify: (token: string, nonce: string, signature: Hex) =>
+    api<{ verified: boolean; walletAddress: Address; verifiedAt: number }>("/ownership/verify", {
+      method: "POST",
+      body: JSON.stringify({ token, nonce, signature }),
+    }),
 
   /** After the delay, the bank co-signs the recovery user operation. */
-  signRecovery: (id: string) => api<{ signature: Hex }>(`/recovery/${id}/sign`, { method: "POST" }),
+  signRecovery: (id: string, token: string) =>
+    api<{ signature: Hex }>(`/recovery/${id}/sign`, { method: "POST", body: JSON.stringify({ token }) }),
 
   /** New device reports the on-chain recovery; the new passkey becomes the one on file. */
   completeRecovery: (id: string, txHash: string) =>
@@ -78,6 +94,7 @@ export type RecoveryRequest = {
   createdAt: number
   unlockAt: number
   bankSignature?: Hex
+  vetoedBy?: "passkey" | "identity"
 }
 
 export type ScreeningResult = {

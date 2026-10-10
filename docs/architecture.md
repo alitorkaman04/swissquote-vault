@@ -65,8 +65,9 @@ No custom smart contracts and no custom cryptography: everything on-chain is Zer
 
 1. **Identity:** the client signs in to Swissquote (existing e-banking login + 2FA). This proves *who* the client is and links the wallet to a KYC'd person.
 2. **Possession + biometrics:** every on-chain action needs a WebAuthn assertion from the passkey, which the device only releases after Face ID / Touch ID.
-3. **Origin binding:** WebAuthn ties the passkey to Swissquote's domain. A phishing site on another domain cannot ask for a signature with it.
-4. **Review:** before the passkey prompt, the client sees recipient, amount, fee (sponsored), balance after, compliance checks and an on-chain simulation.
+3. **User verification:** WebAuthn `userVerification: required` means biometrics or the device PIN, depending on the device.
+4. **Origin binding:** WebAuthn ties the passkey to Swissquote's domain. A phishing site on another domain cannot ask for a signature with it.
+5. **Review:** before the passkey prompt, the client sees recipient, amount, fee (sponsored), balance after, compliance checks and an on-chain simulation.
 
 ## Sequence: create and first transfer
 
@@ -130,10 +131,14 @@ sequenceDiagram
 | Daily limit | Before signing | 25,000 USDC, off-chain. Production: also on-chain via a ZeroDev spending-limit policy |
 | High-value step-up | Before signing | Above 1,000 USDC, the client is asked to confirm in e-banking |
 | Transaction simulation | Before signing | Real `eth_call` simulation on Base Sepolia |
-| Approved dApp list | Apps tab | Static list. Unknown dApps are blocked |
+| Approved dApp list | Apps tab | Static list. Unknown dApps are blocked. Allowances read from chain; one-tap revoke |
+| Wallet ownership proof | Security tab | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |
+| Recovery veto | Old device | Signed by the current passkey (ERC-1271); fallback: authenticated session |
 | Gas sponsorship | Every operation | Real paymaster; policy can be restricted to approved contracts |
 
 ## Known limitations (honest list)
+
+- The recovery validator is installed on-chain by the activation operation right after creation (or, if that fails, by the first transfer). Until then a wallet is not yet recoverable; the UI shows "activates with your first transfer" in that state.
 
 - Compliance checks are enforced by the app and backend, not on-chain. A client using the passkey from a different app could bypass them. This is acceptable for self-custody (it is the client's money) and matches how the screening is meant to protect the client and Swissquote's sponsored gas, not to control funds.
 - The recovery delay is enforced by the guardian service in the prototype. Production sets the validator's on-chain `delay` as well.

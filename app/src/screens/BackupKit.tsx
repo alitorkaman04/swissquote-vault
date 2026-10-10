@@ -1,7 +1,8 @@
 import { useState } from "react"
 import type { Hex } from "viem"
-import type { Wallet } from "../lib/wallet"
-import { Button } from "../ui"
+import { activateWallet, type Wallet } from "../lib/wallet"
+import { EXPLORER_TX } from "../lib/config"
+import { Alert, Button, errorMessage } from "../ui"
 
 /**
  * Shown exactly once, right after creation. The backup key is the client's half of
@@ -10,6 +11,23 @@ import { Button } from "../ui"
 export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet; backupPrivateKey: Hex; onDone: () => void }) {
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [activating, setActivating] = useState(false)
+  const [activation, setActivation] = useState<{ ok: boolean; detail: string; txHash?: string } | null>(null)
+
+  async function activateAndOpen() {
+    setActivating(true)
+    try {
+      const res = await activateWallet(wallet)
+      setActivation({ ok: true, detail: "Your Vault is live on the network and recoverable from now on.", txHash: res?.txHash })
+      setTimeout(onDone, 1800)
+    } catch (e) {
+      // Not fatal: the account deploys (and recovery installs) with the first transfer instead.
+      setActivation({ ok: false, detail: `Activation will happen with your first transfer instead. (${errorMessage(e)})` })
+      setTimeout(onDone, 3500)
+    } finally {
+      setActivating(false)
+    }
+  }
 
   const kit = [
     "SWISSQUOTE VAULT — BACKUP KIT",
@@ -63,9 +81,20 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
         <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
         <span>I’ve stored my backup key somewhere Swissquote can’t see and I can’t lose.</span>
       </label>
-      <Button variant="primary" disabled={!saved} onClick={onDone} block>
-        Open my Vault
+      {activation && (
+        <Alert kind={activation.ok ? "ok" : "warn"}>
+          {activation.detail}
+          {activation.txHash && (
+            <a href={EXPLORER_TX(activation.txHash)} target="_blank" rel="noreferrer">View on Basescan</a>
+          )}
+        </Alert>
+      )}
+      <Button variant="primary" disabled={!saved || !!activation} busy={activating} onClick={activateAndOpen} block>
+        Activate my Vault
       </Button>
+      <p className="muted" style={{ textAlign: "center" }}>
+        One Face ID: deploys your Vault and installs recovery. Gas paid by Swissquote.
+      </p>
       <div className="footer-note">
         Production: the kit is a printed sheet or a second passkey on another device; the demo shows the raw key.
       </div>

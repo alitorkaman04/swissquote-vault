@@ -27,7 +27,7 @@ import {
   getRecoveryAction,
   toECDSASigner,
 } from "@zerodev/weighted-validator"
-import { type Address, type Hex, createPublicClient, http, isAddress } from "viem"
+import { type Address, type Hex, createPublicClient, decodeFunctionData, fallback, http, isAddress, parseAbi } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { baseSepolia } from "viem/chains"
 
@@ -58,6 +58,7 @@ type Recovery = {
   createdAt: number
   unlockAt: number
   bankSignature?: Hex
+  vetoedBy?: "passkey" | "identity"
 }
 
 function load(): Data {
@@ -79,11 +80,21 @@ function save(d: Data) {
 }
 const db = load()
 const bankAccount = privateKeyToAccount(db.bankGuardianPrivateKey)
-const publicClient = createPublicClient({ chain: CHAIN, transport: http() })
+const publicClient = createPublicClient({
+  chain: CHAIN,
+  transport: fallback([
+    http("https://sepolia.base.org", { retryCount: 2 }),
+    http("https://base-sepolia-rpc.publicnode.com", { retryCount: 2 }),
+    http("https://base-sepolia.drpc.org", { retryCount: 2 }),
+  ]),
+})
+const RECOVERY_ABI = parseAbi(["function doRecovery(address _validator, bytes calldata _data)"])
 
 console.log(`Swissquote guardian service (MOCK)  http://localhost:${PORT}`)
 console.log(`  guardian address : ${bankAccount.address}`)
 console.log(`  recovery delay   : ${RECOVERY_DELAY_SECONDS}s (production: 48h)`)
+if (!process.env.BANK_GUARDIAN_PRIVATE_KEY)
+  console.log("  NOTE: guardian key lives in server/data.json - keep that file (or set BANK_GUARDIAN_PRIVATE_KEY in .env)")
 if (!PROJECT_ID) console.warn("  WARNING: ZERODEV_PROJECT_ID not set - recovery signing will fail")
 
 // ---------------------------------------------------------------- helpers
@@ -96,6 +107,7 @@ function auth(token: string | undefined) {
   if (!clientId) throw Object.assign(new Error("not authenticated"), { status: 401 })
   return clientId
 }
+const cancelMessage = (id: string) => `Cancel Vault recovery ${id}`
 function refreshStatus(r: Recovery) {
   if (r.status === "pending" && Date.now() >= r.unlockAt) r.status = "ready"
   return r
@@ -141,6 +153,64 @@ app.get("/wallet", (req, res) => {
   }
 })
 
+// ---------------------------------------------------------------- step-up authentication (mock 2FA)
+app.post("/auth/stepup", (req, res) => {
+  try {
+    auth(req.body?.token)
+    if (req.body?.otp !== "000000") return res.status(401).send("Invalid security code (demo: 000000)")
+    res.json({ ok: true, until: Date.now() + 5 * 60_000 })
+  } catch (e: any) {
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+
+// ---------------------------------------------------------------- wallet ownership proof (FINMA Guidance 02/2019)
+// The bank issues a challenge; the client's smart account signs it with the passkey (ERC-1271);
+// the bank verifies the signature ON-CHAIN against the wallet address it has on file.
+const challenges: Record<string, { clientId: string; message: string; issuedAt: number }> = {}
+app.post("/ownership/challenge", (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const c = db.clients[clientId]
+    if (!c.walletAddress) return res.status(400).send("no wallet on file")
+    const nonce = randomUUID()
+    const message = [
+      "Swissquote wallet ownership check",
+      `Client: ${clientId}`,
+      `Wallet: ${c.walletAddress}`,
+      `Nonce: ${nonce}`,
+      `Issued: ${new Date().toISOString()}`,
+    ].join("\n")
+    challenges[nonce] = { clientId, message, issuedAt: Date.now() }
+    res.json({ nonce, message })
+  } catch (e: any) {
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+app.post("/ownership/verify", async (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const c = db.clients[clientId]
+    const ch = challenges[req.body?.nonce]
+    if (!ch || ch.clientId !== clientId) return res.status(400).send("unknown challenge")
+    if (Date.now() - ch.issuedAt > 5 * 60_000) return res.status(400).send("challenge expired")
+    const valid = await publicClient.verifyMessage({
+      address: c.walletAddress!,
+      message: ch.message,
+      signature: req.body?.signature as Hex,
+    })
+    delete challenges[req.body.nonce]
+    if (!valid) return res.status(401).json({ verified: false })
+    ;(c as typeof c & { ownershipVerifiedAt?: number }).ownershipVerifiedAt = Date.now()
+    save(db)
+    console.log(`[ownership] ${clientId} proved control of ${c.walletAddress} (ERC-1271, verified on-chain)`)
+    res.json({ verified: true, walletAddress: c.walletAddress, verifiedAt: Date.now() })
+  } catch (e: any) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
 // ---------------------------------------------------------------- recovery (guardian service)
 app.post("/recovery/request", (req, res) => {
   try {
@@ -148,10 +218,18 @@ app.post("/recovery/request", (req, res) => {
     const c = db.clients[clientId]
     if (!c.walletAddress) return res.status(400).send("no wallet on file for this client")
     const { callData, newPasskeyName } = req.body
-    // Only one live recovery per wallet.
+    // The bank only ever co-signs a doRecovery call (the on-chain selector binding enforces this too).
+    try {
+      const decoded = decodeFunctionData({ abi: RECOVERY_ABI, data: callData })
+      if (decoded.functionName !== "doRecovery") throw new Error()
+    } catch {
+      return res.status(400).send("recovery request must be a doRecovery call")
+    }
+    // One live recovery per wallet: a new request supersedes an abandoned one (new passkey = new callData).
     for (const r of Object.values(db.recoveries)) {
       if (r.walletAddress === c.walletAddress && ["pending", "ready"].includes(refreshStatus(r).status)) {
-        return res.json(r)
+        r.status = "cancelled"
+        console.log(`[recovery] ${r.id} superseded by a new request`)
       }
     }
     const r: Recovery = {
@@ -184,18 +262,35 @@ app.get("/recovery/:id", (req, res) => {
   if (!r) return res.status(404).send("unknown recovery")
   res.json(refreshStatus(r))
 })
-app.post("/recovery/:id/cancel", (req, res) => {
+// Veto. Strong path: a message signed by a device that still holds the current passkey
+// (verified on-chain via ERC-1271). Fallback: the client's e-banking session.
+app.post("/recovery/:id/cancel", async (req, res) => {
   const r = db.recoveries[req.params.id]
   if (!r) return res.status(404).send("unknown recovery")
   if (r.status === "signed") return res.status(409).send("already executed")
+  let vetoedBy: "passkey" | "identity" | null = null
+  const { signature, message, token } = req.body ?? {}
+  if (signature && message === cancelMessage(r.id)) {
+    try {
+      const ok = await publicClient.verifyMessage({ address: r.walletAddress, message, signature })
+      if (ok) vetoedBy = "passkey"
+    } catch (e) {
+      console.warn("[recovery] veto signature could not be verified:", (e as Error).message)
+    }
+  }
+  if (!vetoedBy && token && db.tokens[token] === r.clientId) vetoedBy = "identity"
+  if (!vetoedBy) return res.status(401).send("veto must be signed by the current passkey or an authenticated client session")
   r.status = "cancelled"
+  ;(r as Recovery & { vetoedBy?: string }).vetoedBy = vetoedBy
   save(db)
-  console.log(`[recovery] ${r.id} CANCELLED by the client's existing device`)
+  console.log(`[recovery] ${r.id} CANCELLED (${vetoedBy === "passkey" ? "signed by the current passkey" : "authenticated client session"})`)
   res.json(r)
 })
 app.post("/recovery/:id/sign", async (req, res) => {
   const r = db.recoveries[req.params.id]
   if (!r) return res.status(404).send("unknown recovery")
+  // Identity is re-checked at signing time: only the client who requested it may collect the bank's half.
+  if (!req.body?.token || db.tokens[req.body.token] !== r.clientId) return res.status(401).send("not authenticated")
   refreshStatus(r)
   if (r.status === "cancelled") return res.status(409).send("recovery was cancelled")
   if (r.status === "pending") return res.status(425).send(`delay not elapsed, ${Math.ceil((r.unlockAt - Date.now()) / 1000)}s left`)
