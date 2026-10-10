@@ -23,12 +23,15 @@ Test USDC for Base Sepolia: https://faucet.circle.com
 process's storage): deleting one makes every wallet created so far unrecoverable through that guardian (their on-chain
 recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` / `PARTNER_PRIVATE_KEY` in `.env` (only used when the data file doesn't exist yet).
 
+**Fresh demo:** stop `npm run dev`, run `npm run reset-demo` (forgets every client, Vault and recovery but keeps the
+keys, with a backup), start again, and open `http://localhost:5173/?reset` once in each browser.
+
 ## Demo script (what the judges see)
 
 1. **Sign in to Swissquote** (mock e-banking).
-2. **Create your Vault** → Touch ID / Face ID → a passkey is created; the wallet address is derived from it and linked to the KYC'd client.
+2. **Create your Vault** → Touch ID / Face ID → a passkey is created; the wallet address is derived from it and linked to the KYC'd client. Coming back later, the Swissquote login alone doesn't open the Vault: a lock screen asks for the passkey (Face ID / fingerprint).
 3. **Backup kit** → the client's recovery key, shown once.
-4. **Send USDC** → compliance checks (sanctions list, limits, high-value step-up) + on-chain simulation → sign with passkey → **gas paid by Swissquote** → Basescan link.
+4. **Send USDC** → compliance checks (sanctions list, limits, high-value step-up) + on-chain simulation → sign with passkey → **gas paid by Swissquote** → Basescan link. The first transaction also deploys the Vault and installs its recovery rules on-chain, so make one before trying recovery.
    - try recipient `0x000000000000000000000000000000000000bad1` to see a sanctions block
    - try an amount above 1,000 to see the high-value step-up
 5. **Apps** → approved dApp list; connecting runs a real on-chain approval; unknown apps are blocked.

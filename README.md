@@ -81,12 +81,18 @@ backup key, which the on-chain recovery rules require, and Swissquote refuses to
 Working end to end on Base Sepolia: passkey wallet creation, gasless USDC transfers, approved-dApp interaction,
 sanctions block, and lost-phone recovery (backup key + Swissquote guardian after a delay) followed by signing
 with the new passkey. Also implemented: the independent recovery partner (recovery without Swissquote), backup-key checks by the app and
-both guardians (registered backup key + on-chain recovery header), and the live attacker refusal. Start with [`app/README.md`](app/README.md) to run it and [`docs/`](docs/) for the design.
+both guardians (registered backup key + on-chain recovery header), the live attacker refusal, and a lock screen so only the passkey opens the Vault. Start with [`app/README.md`](app/README.md) to run it and [`docs/`](docs/) for the design.
 
 ## AI tools used
 
-- **Claude (Anthropic), in the Claude app with agentic coding:** wrote the application code, the mock services, tests and CI, the documentation, the pitch deck and the demo script, following our instructions and decisions; researched FINMA sources, Swissquote's published figures and the ZeroDev contracts.
-- **What we did ourselves:** chose the direction and trade-offs, ran and tested every flow on our own devices (Mac with Chrome and Safari, iPhone via cross-device passkeys), reported bugs, reviewed the outputs, and present the project.
+We used **Claude (Anthropic)** as our AI coding and writing assistant, and we want to be transparent about how.
+
+- **Our part:** we set the product direction and the requirements, made the design decisions and trade-offs (what the
+  custody model must guarantee, which features to build, what to mock), ran and tested every flow live on Base Sepolia on
+  our own devices (Mac with Chrome and Safari, iPhone passkeys), found the bugs in that testing and verified each fix,
+  reviewed the code and documents, and present and defend the project.
+- **Claude's part:** generated most of the code, tests and documentation from our instructions, helped research FINMA
+  sources, Swissquote's published figures and the ZeroDev contracts, and drafted the slides.
 - No other AI tools were used. No custom cryptography: all signing uses WebAuthn, viem and the audited ZeroDev contracts.
 
 ## Team
