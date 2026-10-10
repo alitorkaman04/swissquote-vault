@@ -142,8 +142,8 @@ export function Preview() {
           <p>Demo: a thief with the stolen phone and the email inbox tries to recover.</p>
         </div>
         <AttackerRefused
-          chain="Refused. 0x3a91F2… is not one of this Vault’s 3 recovery keys on Base Sepolia."
-          bank="Swissquote refused to co-sign: the approval is not signed by a recovery key of this Vault"
+          chain="Refused. 0x3a91F2… is not this Vault’s backup key, and the Vault’s recovery rules on Base Sepolia accept no other."
+          bank="Swissquote refused to co-sign: the approval is not signed by this Vault's backup key"
         />
       </div>
     ),
