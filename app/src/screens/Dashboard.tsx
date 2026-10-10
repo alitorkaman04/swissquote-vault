@@ -4,10 +4,9 @@ import { bank, type ApprovedDapp, type BankSession, type RecoveryRequest, type S
 import { EXPLORER_ADDRESS, EXPLORER_TX, USDC_ADDRESS, USDC_DECIMALS } from "../lib/config"
 import { getBalances, getUsdcAllowance, isDeployed, publicClient, revokeUsdcAllowance, sendCalls, sendUsdc, signMessageWithPasskey, type Wallet } from "../lib/wallet"
 import QRCode from "qrcode"
-import { Alert, Button, Field, errorMessage, short } from "../ui"
+import { Alert, Button, Field, errorMessage, formatGas, short } from "../ui"
 
-type Activity = { at: number; label: string; txHash: string; amount?: string }
-const activityKey = (address: string) => `swissquote-vault:activity:${address.toLowerCase()}`
+import { appendActivity, readActivity, type Activity } from "../lib/activity"
 
 export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankSession: BankSession; onLostDevice: () => void }) {
   const { address } = wallet.session
@@ -16,13 +15,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   const [vetoNote, setVetoNote] = useState<string | null>(null)
   const [balances, setBalances] = useState<{ usdc: string; eth: string } | null>(null)
   const [deployed, setDeployed] = useState<boolean | null>(null)
-  const [activity, setActivity] = useState<Activity[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(activityKey(wallet.session.address)) ?? "[]")
-    } catch {
-      return []
-    }
-  })
+  const [activity, setActivity] = useState<Activity[]>(() => readActivity(wallet.session.address))
   const [pendingRecovery, setPendingRecovery] = useState<RecoveryRequest | null>(null)
   const [copied, setCopied] = useState(false)
   const [replaced, setReplaced] = useState(false)
@@ -58,11 +51,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   }, [address, bankSession.token, wallet.session.passkeyName])
 
   function addActivity(a: Activity) {
-    setActivity((prev) => {
-      const next = [a, ...prev].slice(0, 20)
-      localStorage.setItem(activityKey(address), JSON.stringify(next))
-      return next
-    })
+    setActivity(appendActivity(address, a))
   }
 
   if (replaced) {
@@ -195,23 +184,35 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
       {tab === "send" && <Send wallet={wallet} bankSession={bankSession} onSent={(a) => { addActivity(a); refresh() }} balance={balances?.usdc} />}
       {tab === "receive" && <Receive address={address} />}
       {tab === "dapps" && <Dapps wallet={wallet} onSent={(a) => { addActivity(a); refresh() }} />}
-      {tab === "security" && <Security wallet={wallet} bankSession={bankSession} onLostDevice={onLostDevice} />}
+      {tab === "security" && (
+        <Security
+          wallet={wallet}
+          bankSession={bankSession}
+          onLostDevice={onLostDevice}
+          onEvent={(label) => addActivity({ at: Date.now(), label, txHash: "" })}
+        />
+      )}
 
       {activity.length > 0 && (
         <div className="card">
           <h2>Recent</h2>
           <div className="list">
             {activity.map((a) => (
-              <div className="item" key={a.txHash}>
+              <div className="item" key={`${a.at}-${a.txHash}`}>
                 <div>
                   <div className="name">{a.label}</div>
                   <div className="sub">{new Date(a.at).toLocaleString()}</div>
                 </div>
                 <div className="right">
                   {a.amount && <div>{a.amount}</div>}
-                  <a className="sub" href={EXPLORER_TX(a.txHash)} target="_blank" rel="noreferrer">
-                    view on Basescan
-                  </a>
+                  {a.gas && <div className="sub">fee {a.gas} · Swissquote</div>}
+                  {a.txHash ? (
+                    <a className="sub" href={EXPLORER_TX(a.txHash)} target="_blank" rel="noreferrer">
+                      view on Basescan
+                    </a>
+                  ) : (
+                    <span className="sub">off-chain</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -235,7 +236,7 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
   const [stage, setStage] = useState<"form" | "review" | "signing" | "done">("form")
   const [screening, setScreening] = useState<ScreeningResult | null>(null)
   const [simulation, setSimulation] = useState<{ ok: boolean; detail: string } | null>(null)
-  const [result, setResult] = useState<{ txHash: string } | null>(null)
+  const [result, setResult] = useState<{ txHash: string; gas?: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -263,10 +264,11 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
     setErr(null)
     setStage("signing")
     try {
-      const { txHash } = await sendUsdc(wallet, to as Address, amount)
-      setResult({ txHash })
+      const { txHash, gasCostWei } = await sendUsdc(wallet, to as Address, amount)
+      const gas = formatGas(gasCostWei)
+      setResult({ txHash, gas })
       setStage("done")
-      onSent({ at: Date.now(), label: `Sent to ${short(to)}`, txHash, amount: `−${amount} USDC` })
+      onSent({ at: Date.now(), label: `Sent to ${short(to)}`, txHash, amount: `−${amount} USDC`, gas })
     } catch (e) {
       setErr(errorMessage(e))
       setStage("review")
@@ -278,7 +280,7 @@ function Send({ wallet, bankSession, onSent, balance }: { wallet: Wallet; bankSe
       <div className="card">
         <Alert kind="ok">
           <b>Sent {amount} USDC</b>
-          <span>Gas was paid by Swissquote. You never needed ETH.</span>
+          <span>Network fee {result.gas ? `of ${result.gas} ` : ""}paid by Swissquote. You never needed ETH.</span>
           <a href={EXPLORER_TX(result.txHash)} target="_blank" rel="noreferrer">
             View the transaction on Basescan
           </a>
@@ -465,8 +467,8 @@ function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => vo
     setRevoking(d.id)
     setErr(null)
     try {
-      const { txHash } = await revokeUsdcAllowance(wallet, d.contracts[0])
-      onSent({ at: Date.now(), label: `Revoked ${d.name}’s access to USDC`, txHash })
+      const { txHash, gasCostWei } = await revokeUsdcAllowance(wallet, d.contracts[0])
+      onSent({ at: Date.now(), label: `Revoked ${d.name}’s access to USDC`, txHash, gas: formatGas(gasCostWei) })
       await loadAllowances(dapps)
     } catch (e) {
       setErr(errorMessage(e))
@@ -485,14 +487,14 @@ function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => vo
     setBusy(true)
     setErr(null)
     try {
-      const { txHash } = await sendCalls(wallet, [
+      const { txHash, gasCostWei } = await sendCalls(wallet, [
         {
           to: USDC_ADDRESS,
           data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [d.contracts[0], parseUnits("1", USDC_DECIMALS)] }),
         },
       ])
       setDone(txHash)
-      onSent({ at: Date.now(), label: `Allowed ${d.name} to use 1 USDC`, txHash })
+      onSent({ at: Date.now(), label: `Allowed ${d.name} to use 1 USDC`, txHash, gas: formatGas(gasCostWei) })
       await loadAllowances(dapps)
     } catch (e) {
       setErr(errorMessage(e))
@@ -567,7 +569,17 @@ function Dapps({ wallet, onSent }: { wallet: Wallet; onSent: (a: Activity) => vo
 // Security: where the keys live + the "lost phone" entry point
 // ---------------------------------------------------------------------------
 
-function Security({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankSession: BankSession; onLostDevice: () => void }) {
+function Security({
+  wallet,
+  bankSession,
+  onLostDevice,
+  onEvent,
+}: {
+  wallet: Wallet
+  bankSession: BankSession
+  onLostDevice: () => void
+  onEvent: (label: string) => void
+}) {
   const s = wallet.session
   const [proof, setProof] = useState<{ state: "idle" | "busy" | "ok" | "fail"; detail?: string }>({ state: "idle" })
 
@@ -582,6 +594,7 @@ function Security({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankS
           ? { state: "ok", detail: `Swissquote verified on-chain that this passkey controls ${short(res.walletAddress, 8)}.` }
           : { state: "fail", detail: "Signature did not verify." },
       )
+      if (res.verified) onEvent("Proved wallet ownership to Swissquote (verified on-chain)")
     } catch (e) {
       setProof({ state: "fail", detail: errorMessage(e) })
     }

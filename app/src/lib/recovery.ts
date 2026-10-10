@@ -133,7 +133,7 @@ export async function submitRecovery(
   } as never)) as Hex
   const receipt = await client.waitForUserOperationReceipt({ hash })
   if (!receipt.success) throw new Error(`Recovery user operation reverted (${receipt.reason ?? "no reason"})`)
-  return { userOpHash: hash, txHash: receipt.receipt.transactionHash }
+  return { userOpHash: hash, txHash: receipt.receipt.transactionHash, gasCostWei: receipt.actualGasCost }
 }
 
 /** After recovery, persist the new passkey session so the new device is the everyday device. */

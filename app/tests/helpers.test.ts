@@ -28,3 +28,12 @@ describe("recovery validator config", () => {
     expect(Math.max(...c.signers.map((s) => s.weight))).toBeLessThan(c.threshold)
   })
 })
+
+import { formatGas } from "../src/ui"
+describe("formatGas", () => {
+  it("formats small wei amounts readably", () => {
+    expect(formatGas(2_100_000_000_000n)).toBe("0.0000021 ETH")
+    expect(formatGas(0n)).toBe("0 ETH")
+    expect(formatGas(undefined)).toBe("")
+  })
+})

@@ -14,3 +14,4 @@
 | `roadmap.md` | Prototype → pilot → production | pitch |
 | `demo-checklist.md` | Night-before and 60-minutes-before checklist, fallback plan | demo |
 | `cheat-sheet.md` | One page to keep next to the laptop | demo |
+| `security-review.md` | Internal review findings and fixes | tech |

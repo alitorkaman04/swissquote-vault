@@ -2,7 +2,8 @@ import { useState } from "react"
 import type { Hex } from "viem"
 import { activateWallet, type Wallet } from "../lib/wallet"
 import { EXPLORER_TX } from "../lib/config"
-import { Alert, Button, errorMessage } from "../ui"
+import { Alert, Button, errorMessage, formatGas } from "../ui"
+import { appendActivity } from "../lib/activity"
 
 /**
  * Shown exactly once, right after creation. The backup key is the client's half of
@@ -18,6 +19,7 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
     setActivating(true)
     try {
       const res = await activateWallet(wallet)
+      if (res) appendActivity(wallet.session.address, { at: Date.now(), label: "Vault activated: account deployed, recovery installed", txHash: res.txHash, gas: formatGas(res.gasCostWei) })
       setActivation({ ok: true, detail: "Your Vault is live on the network and recoverable from now on.", txHash: res?.txHash })
       setTimeout(onDone, 1800)
     } catch (e) {

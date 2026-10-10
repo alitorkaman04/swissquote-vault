@@ -113,3 +113,12 @@ export function uniquePasskeyName(clientId: string) {
   const two = (n: number) => String(n).padStart(2, "0")
   return `${clientId}-${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`
 }
+
+/** "0.0000021 ETH" from wei, trimmed to the first significant digits. */
+export function formatGas(wei: bigint | undefined) {
+  if (wei === undefined) return ""
+  const eth = Number(wei) / 1e18
+  if (eth === 0) return "0 ETH"
+  const digits = Math.max(2, -Math.floor(Math.log10(eth)) + 1)
+  return `${eth.toFixed(Math.min(digits, 10))} ETH`
+}

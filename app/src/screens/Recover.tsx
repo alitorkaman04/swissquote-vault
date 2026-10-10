@@ -4,7 +4,8 @@ import { bank, type BankSession, type RecoveryRequest } from "../lib/bank"
 import { EXPLORER_TX, RECOVERY_DELAY_SECONDS } from "../lib/config"
 import { adoptRecoveredSession, approveWithBackupKey, prepareNewPasskey, submitRecovery, type buildRecoveryClient } from "../lib/recovery"
 import type { WalletSession } from "../lib/wallet"
-import { Alert, Button, Field, errorMessage, short, uniquePasskeyName } from "../ui"
+import { Alert, Button, Field, errorMessage, formatGas, short, uniquePasskeyName } from "../ui"
+import { appendActivity } from "../lib/activity"
 
 /**
  * Lost-phone recovery, as the client experiences it on a NEW device:
@@ -83,7 +84,8 @@ export function Recover({
     run(async () => {
       if (!request || !backupSig || !prepared) throw new Error("missing state")
       const { signature: bankSignature } = await bank.signRecovery(request.id, bankSession.token)
-      const { txHash } = await submitRecovery(backupSig.client, prepared.callData, [backupSig.signature, bankSignature])
+      const { txHash, gasCostWei } = await submitRecovery(backupSig.client, prepared.callData, [backupSig.signature, bankSignature])
+      appendActivity(existing.walletAddress, { at: Date.now(), label: `Recovered: passkey replaced by “${newName.trim()}”`, txHash, gas: formatGas(gasCostWei) })
       setTxHash(txHash)
       setStep(4)
       await bank.completeRecovery(request.id, txHash).catch(() => {})

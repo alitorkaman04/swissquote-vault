@@ -301,7 +301,7 @@ export async function sendUsdc(wallet: Wallet, to: Address, amountUsdc: string) 
     ]),
   })
   const receipt = await wallet.client.waitForUserOperationReceipt({ hash })
-  return { userOpHash: hash, txHash: receipt.receipt.transactionHash }
+  return { userOpHash: hash, txHash: receipt.receipt.transactionHash, gasCostWei: receipt.actualGasCost }
 }
 
 export async function sendEth(wallet: Wallet, to: Address, amountEth: string) {
@@ -309,7 +309,7 @@ export async function sendEth(wallet: Wallet, to: Address, amountEth: string) {
     callData: await wallet.client.account!.encodeCalls([{ to, value: parseEther(amountEth), data: "0x" }]),
   })
   const receipt = await wallet.client.waitForUserOperationReceipt({ hash })
-  return { userOpHash: hash, txHash: receipt.receipt.transactionHash }
+  return { userOpHash: hash, txHash: receipt.receipt.transactionHash, gasCostWei: receipt.actualGasCost }
 }
 
 /** Generic contract call (used for the approved-dApp flow). */
@@ -320,7 +320,7 @@ export async function sendCalls(wallet: Wallet, calls: { to: Address; value?: bi
     ),
   })
   const receipt = await wallet.client.waitForUserOperationReceipt({ hash })
-  return { userOpHash: hash, txHash: receipt.receipt.transactionHash }
+  return { userOpHash: hash, txHash: receipt.receipt.transactionHash, gasCostWei: receipt.actualGasCost }
 }
 
 /**
