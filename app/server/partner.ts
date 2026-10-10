@@ -95,6 +95,10 @@ app.post("/register", (req, res) => {
   if (existing && existing.holder.toLowerCase() !== holder.trim().toLowerCase()) {
     return res.status(409).send("this Vault is already registered to another holder")
   }
+  // Recovery addresses are fixed at creation: they can't be swapped later.
+  if (existing?.backupAddress && getAddress(backupAddress) !== existing.backupAddress) {
+    return res.status(409).send("recovery addresses are fixed at creation")
+  }
   db.vaults[key(walletAddress)] = {
     holder: holder.trim(),
     registeredAt: existing?.registeredAt ?? Date.now(),
@@ -115,7 +119,7 @@ app.get("/vault/:address", (req, res) => {
 
 // The client asks the partner to co-sign a recovery. Requires: a registered Vault, the holder's identity
 // (mock: client number; production: video identification against the escrowed KYC file), a doRecovery
-// call, and the client's backup approval - verified against the Vault's recovery keys on-chain.
+// call, and the client's backup approval - verified against the registered backup key and the Vault's on-chain recovery header.
 app.post("/recovery/request", async (req, res) => {
   const { walletAddress, holder, callData, newPasskeyName, backupApproval } = req.body ?? {}
   try {

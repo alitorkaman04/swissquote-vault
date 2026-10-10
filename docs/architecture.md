@@ -126,14 +126,14 @@ sequenceDiagram
   Note over SQ: waiting period starts (48 h prod, 30 s demo)
   C->>A: enter backup key
   A->>A: is this the Vault's registered backup key? (refused if not)
-  A->>K: read recovery setup (installed, keys, weights)
+  A->>K: read recovery setup (installed, number of keys, total weight)
   A->>A: backup key approves the recovery operation
   alt client cancels from old device
     OLD->>SQ: cancel, signed by the current passkey
     SQ-->>A: recovery cancelled, nothing happens
   else delay passes without objection
     A->>SQ: request co-signature + backup approval
-    SQ->>K: read recovery setup; verify approval comes from the backup key
+    SQ->>K: read recovery setup, verify approval comes from the backup key
     SQ->>A: guardian approval
     A->>K: user operation [backup approval, guardian approval, final sig] → doRecovery
     K->>K: passkey validator now holds the NEW public key
@@ -151,13 +151,13 @@ sequenceDiagram
   participant K as Smart account
   Note over A: Swissquote unreachable
   C->>A: paste backup kit (Vault address + backup key)
-  A->>P: registered recovery addresses; is this the backup key?
+  A->>P: registered recovery addresses - is this the backup key?
   A->>K: read recovery setup: partner installed?
   A->>C: Face ID - create NEW passkey
   A->>A: backup key approves doRecovery
   A->>P: request: identity + backup approval
-  P->>K: read recovery setup; verify approval from the backup key (60 + 40 = 100)
-  Note over P: waiting period (30 days prod, 45 s demo); passkey can veto
+  P->>K: read recovery setup, verify approval from the backup key (60 + 40 = 100)
+  Note over P: waiting period (30 days prod, 45 s demo), passkey can veto
   P->>A: partner approval
   A->>K: user operation [backup approval, partner approval] → doRecovery
 ```
@@ -183,8 +183,8 @@ sequenceDiagram
 | Control | Where | Prototype |
 | --- | --- | --- |
 | Sanctions screening of counterparty | Before signing | Mock blocklist (`0x…bad1`). Production: Chainalysis / Elliptic, OFAC + SECO lists |
-| Daily limit | Before signing | 25,000 USDC, off-chain. Production: also on-chain via a ZeroDev spending-limit policy |
-| High-value step-up | Before signing | Above 1,000 USDC, the client is asked to confirm in e-banking |
+| Daily limit | Before signing | 25,000 USDC per transfer, off-chain (prototype). Production: cumulative 24 h, plus an on-chain ZeroDev spending-limit policy |
+| High-value step-up | Before signing | Above 1,000 USDC the client also enters the Swissquote security code (step-up; mock code 000000) |
 | Transaction simulation | Before signing | Real `eth_call` simulation on Base Sepolia |
 | Approved dApp list | Apps tab | Static list. Unknown dApps are blocked. Allowances read from chain; one-tap revoke |
 | Wallet ownership proof | Security tab | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |

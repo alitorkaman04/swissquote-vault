@@ -11,7 +11,7 @@ storage, while the client app never holds its share.** Here is how Vault complie
 | Component | Status | Notes |
 | --- | --- | --- |
 | Passkey creation and signing (WebAuthn, secure enclave) | **Real** | Platform authenticator on the device; public key stored by ZeroDev's passkey server so the user can log in by name on any device |
-| Smart account (Kernel v3.1, ERC-4337) | **Real** | Deployed on Base Sepolia on first transaction |
+| Smart account (Kernel v3.1, ERC-4337) | **Real** | Deployed on Base Sepolia by the activation operation right after creation |
 | Gasless transfers (paymaster) | **Real** | ZeroDev paymaster sponsors gas; in production Swissquote funds the paymaster |
 | USDC transfers | **Real** | Circle test USDC on Base Sepolia |
 | Recovery validator (weighted: backup 60, Swissquote 40, partner 40, threshold 100, bound to `doRecovery`) | **Real** | On-chain; every signature is a genuine ECDSA approval verified by the validator contract |

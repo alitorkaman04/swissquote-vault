@@ -27,10 +27,10 @@ Base inputs from Swissquote's reports; **everything else is a labelled assumptio
 | --- | --- | --- |
 | Client accounts | 1,220,818 | H1 2026 |
 | Share of clients active in crypto | 10% (≈122,000) | **Assumption** |
-| Net crypto income per crypto client | ≈ CHF 714 / yr | CHF 85.7 m ÷ (1.2 m × 10%) |
+| Net crypto income per crypto client | ≈ CHF 714 / yr | CHF 85.7 m ÷ 120,000 (client base rounded to 1.2 m) |
 | Vault adoption among crypto clients | 5% year 1, 15% year 3 | **Assumption** |
 | User operations per Vault user | 24 / yr | **Assumption** |
-| Gas per user operation on an L2 | ≈ USD 0.03 | **Assumption** (L2 fees vary) |
+| Gas per user operation on an L2 | ≈ USD 0.03 (USD 1 ≈ CHF 0.88) | **Assumption** (L2 fees vary) |
 | Independent recovery partner fee | CHF 5 per Vault per year, paid by Swissquote | **Assumption** (key custody in an HSM + rare video identifications) |
 
 | | Year 1 | Year 3 |
@@ -46,6 +46,8 @@ Base inputs from Swissquote's reports; **everything else is a labelled assumptio
 | Independent recovery partner | CHF 30,500 | CHF 91,600 |
 | **Running cost** | **CHF 0.34 m** | **CHF 0.41 m** |
 | **Contribution** | **CHF 1.28 m** | **CHF 5.06 m** |
+
+**Sensitivity:** at the H1 2026 run-rate (CHF 29.2 m/yr, ≈ CHF 243 per crypto client), retained income falls to CHF 0.30 m / 0.89 m and contribution to about **CHF 0.71 m (year 1) / CHF 3.34 m (year 3)**: still clearly positive.
 
 One-off build (6 people × 9 months) estimated at about CHF 1.5 m, paid back in a little over a year at year-1 contribution.
 

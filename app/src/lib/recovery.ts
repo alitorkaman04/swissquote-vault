@@ -63,8 +63,8 @@ export async function prepareNewPasskey(newPasskeyName: string) {
 }
 
 /**
- * Checks a backup key against the Vault's recovery keys AS STORED ON-CHAIN, before anything
- * is signed or sent. This is where an attacker with a stolen phone and inbox is refused:
+ * Checks a backup key against the backup address registered at creation and the Vault's on-chain
+ * recovery header, before anything is signed or sent. This is where an attacker with a stolen phone and inbox is refused:
  * neither holds the backup key, and no other key is accepted by the validator contract.
  */
 export async function checkBackupKey(walletAddress: Address, backupPrivateKey: string, known: KnownKeys) {

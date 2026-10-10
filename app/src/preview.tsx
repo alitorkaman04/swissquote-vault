@@ -55,7 +55,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         checks: [
           { name: "Sanctions screening (OFAC / SECO lists)", passed: !sanctioned, detail: "Counterparty address checked against sanctions lists" },
           { name: "Address format", passed: true, detail: "Valid address, not self-transfer" },
-          { name: "Daily limit (25,000 USDC)", passed: true, detail: "Cumulative 24h outgoing volume" },
+          { name: "Per-transfer limit (25,000 USDC)", passed: true, detail: "Prototype: per transfer. Production: cumulative 24 h volume" },
           { name: "High-value check (> 1,000 USDC)", passed: amount <= 1000, detail: amount > 1000 ? "Requires e-banking confirmation (step-up authentication)" : "Below threshold" },
         ],
       })

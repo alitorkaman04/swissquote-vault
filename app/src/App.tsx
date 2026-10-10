@@ -267,7 +267,7 @@ export function StageAside() {
       </div>
       <div className="realmock">
         <div><b>Real, on Base Sepolia</b>Passkeys · smart account · recovery rules · gasless transactions · simulation</div>
-        <div><b><span className="mock-tag">MOCK</span> labelled in the app</b>Bank login & 2FA · guardian HSMs · partner’s ID check · sanctions list</div>
+        <div><b><span className="mock-tag">MOCK</span> labelled in the app</b>Bank login & 2FA · guardian HSMs · partner’s ID check · sanctions & dApp lists</div>
       </div>
       <div className="meta">
         <span className="pill dot ok">Live on Base Sepolia</span>

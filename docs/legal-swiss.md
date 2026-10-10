@@ -40,7 +40,7 @@ When a Swissquote client moves crypto between their Swissquote account and an ex
 Today that means screenshots, test transactions or signed messages for each external address. Vault solves it **by construction**:
 
 1. **Created inside a KYC'd session.** The wallet is generated after e-banking login and 2FA, and its address is registered to the client record at creation (`POST /wallet` in the prototype). The link between person and wallet exists from block zero.
-2. **Cryptographic proof on demand.** The smart account implements ERC-1271, so the client's passkey can sign a Swissquote challenge message at any time. This is the "signed message" method practitioners cite as acceptable proof of private-key control. [Goldblum, Travel rule Switzerland] **Demo:** Security tab → "Sign ownership proof with passkey": the bank issues a nonce challenge, the passkey signs it, the bank verifies the signature against the wallet address on-chain and records the verification.
+2. **Cryptographic proof on demand.** The smart account implements ERC-1271, so the client's passkey can sign a Swissquote challenge message at any time. This is the "signed message" method practitioners cite as acceptable proof of private-key control. [Goldblum, Travel rule Switzerland] **Demo:** Security tab → "Sign ownership proof": the bank issues a nonce challenge, the passkey signs it, the bank verifies the signature against the wallet address on-chain and records the verification.
 3. **Recovery keeps the link.** After recovery the address does not change, so Swissquote's ownership record stays valid, unlike a client who creates a new MetaMask after losing a seed phrase.
 
 ## Travel Rule: when is Swissquote the sending institution?

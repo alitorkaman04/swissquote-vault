@@ -1,9 +1,9 @@
 /**
- * The recovery rules, read from and checked against the blockchain.
+ * The recovery rules, checked against the blockchain's recovery header.
  *
  * Pure module (viem only, no browser APIs): used by the app AND by the two guardian
  * services (server/index.ts = Swissquote, server/partner.ts = independent partner),
- * so all three agree on one source of truth: the weighted validator's storage on-chain.
+ * so all three apply the same rules.
  *
  * Recovery keys of a new Vault (threshold 100):
  *   client backup key      60   always required (60 < 100 alone)
@@ -91,7 +91,12 @@ export type KnownKeys = { backup: Address; swissquote: Address; partner?: Addres
  * Note: the validator's per-guardian getter doesn't decode with the SDK's published ABI, so the keys
  * themselves come from the registration; the contract still enforces them on every recovery.
  */
-export async function readRecoverySetup(client: Client, wallet: Address, known: KnownKeys): Promise<RecoverySetup | null> {
+export async function readRecoverySetup(
+  client: Client,
+  wallet: Address,
+  known: KnownKeys,
+  { strict = false }: { strict?: boolean } = {},
+): Promise<RecoverySetup | null> {
   let header: { total: number; threshold: number; count: number } | null = null
   try {
     const [total, threshold, , count] = await readContract(client, {
@@ -102,6 +107,8 @@ export async function readRecoverySetup(client: Client, wallet: Address, known: 
     })
     header = { total: Number(total), threshold: Number(threshold), count: Number(count) }
   } catch (e) {
+    // Guardians (strict) never co-sign without the on-chain check; the app may fall back for display.
+    if (strict) throw new Error("could not read the Vault's recovery setup from the chain; try again")
     console.warn("could not read the recovery header; using the registered configuration", e)
   }
   if (header && (header.threshold === 0 || header.count === 0)) return null

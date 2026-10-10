@@ -27,7 +27,7 @@ describe("pre-signature compliance", () => {
     expect(screenTransfer({ from: me, to: me.toLowerCase(), amountUsdc: "1" }, policy).decision).toBe("block")
   })
 
-  it("blocks above the daily limit and zero/negative amounts", () => {
+  it("blocks above the transfer limit and zero/negative amounts", () => {
     expect(screenTransfer({ from: me, to: friend, amountUsdc: "25001" }, policy).decision).toBe("block")
     expect(screenTransfer({ from: me, to: friend, amountUsdc: "0" }, policy).decision).toBe("block")
     expect(screenTransfer({ from: me, to: friend, amountUsdc: "-3" }, policy).decision).toBe("block")

@@ -120,6 +120,12 @@ app.post("/wallet", (req, res) => {
     const { walletAddress, backupAddress, partnerAddress, passkeyName } = req.body
     if (!isAddress(walletAddress) || !isAddress(backupAddress)) return res.status(400).send("bad addresses")
     if (partnerAddress !== undefined && !isAddress(partnerAddress)) return res.status(400).send("bad partner address")
+    const c = db.clients[clientId]
+    // A Vault's recovery addresses are fixed at creation: nobody (e.g. someone who reset the
+    // e-banking password) can swap in their own backup address later.
+    if (c.walletAddress?.toLowerCase() === walletAddress.toLowerCase() && c.backupAddress && c.backupAddress.toLowerCase() !== backupAddress.toLowerCase()) {
+      return res.status(409).send("recovery addresses are fixed at creation")
+    }
     // Public addresses only: Swissquote never receives the backup KEY.
     Object.assign(db.clients[clientId], { walletAddress, backupAddress, partnerAddress, passkeyName, recoveredAt: undefined })
     save(db)
@@ -331,7 +337,7 @@ app.get("/compliance/dapps", (_req, res) =>
       url: "https://app.uniswap.org",
       category: "DEX",
       contracts: ["0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"],
-      note: "Swap tokens. Reviewed by Swissquote Digital Assets; audited; live since 2018.",
+      note: "Swap tokens. (Demo list) Reviewed by Swissquote; audited; live since 2018.",
     },
     {
       id: "aave",

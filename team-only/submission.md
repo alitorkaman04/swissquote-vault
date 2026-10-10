@@ -27,7 +27,7 @@ Today a Swissquote client who wants to hold their own keys has to withdraw to an
 **Bonus topics tackled**
 - **Gasless transactions:** every operation is sponsored by a paymaster; the client never holds ETH. Swissquote pays; abuse prevention in production: sponsor only registered KYC'd Vaults, only USDC, approved dApps and recovery, per-account rate limits and monthly budget (`docs/architecture.md`).
 - **Compliant dApp interaction:** approved-dApp list with unknown sites blocked; limited approvals with on-chain allowance display and one-tap revoke; sanctions screening; plain-language simulation before signing; step-up above 1,000 USDC.
-- **Recovery that refuses an attacker with the stolen phone and email:** live demo, enforced on-chain and by the guardian.
+- **Recovery that refuses an attacker with the stolen phone and email:** live demo; the on-chain rules require the backup key, and the guardian refuses to co-sign without it.
 - **Swiss regulatory considerations:** custody analysis, Travel Rule, ownership proof, client terms, questions for FINMA.
 
 **AI tools used**
@@ -39,6 +39,7 @@ Today a Swissquote client who wants to hold their own keys has to withdraw to an
 
 **Links**
 - Repo: https://github.com/alitorkaman04/swissquote-vault
-- Demo video: [paste link]
-- Docs: `docs/` (custody model, threat model, architecture, legal, business case, mocks)
-- Smart account on Basescan: https://sepolia.basescan.org/address/0xCbF1aac42FB105bc57be2b0b21E5dba1cE6B33b6
+- Demo video (live recording, if recorded): [paste link]
+- UI walkthrough video: [paste link]
+- One-page overview for judges: `docs/overview.md`; details in `docs/` (custody model, threat model, architecture, legal, business case, mocks)
+- A Vault with a real recovery on Basescan: https://sepolia.basescan.org/address/0xf47c2936C39953118BFcED58A4852ff29447Cd9a

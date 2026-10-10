@@ -41,7 +41,7 @@ export function screenTransfer(
   const checks = [
     { name: "Sanctions screening (OFAC / SECO lists)", passed: sanctions, detail: "Counterparty address checked against sanctions lists" },
     { name: "Address format", passed: format, detail: "Valid address, not self-transfer" },
-    { name: `Daily limit (${policy.dailyLimitUsdc.toLocaleString("en-US")} USDC)`, passed: limit, detail: "Cumulative 24h outgoing volume" },
+    { name: `Per-transfer limit (${policy.dailyLimitUsdc.toLocaleString("en-US")} USDC)`, passed: limit, detail: "Prototype: per transfer. Production: cumulative 24 h volume" },
     {
       name: `High-value check (> ${policy.highValueUsdc.toLocaleString("en-US")} USDC)`,
       passed: highValue,
@@ -61,7 +61,7 @@ export function screenTransfer(
   }
   if (!limit) {
     decision = "block"
-    reasons.push(amount > policy.dailyLimitUsdc ? "Exceeds daily limit" : "Invalid amount")
+    reasons.push(amount > policy.dailyLimitUsdc ? "Exceeds the transfer limit" : "Invalid amount")
   }
   if (decision === "allow" && !highValue) {
     decision = "review"

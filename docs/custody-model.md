@@ -22,7 +22,7 @@ Threshold: **100**. The arithmetic is the custody model:
 | Swissquote + partner | 40 + 40 = 80 | ❌ **The institutions can never act without the client** |
 | Any single key | ≤ 60 | ❌ |
 
-The recovery keys form a weighted validator installed as a *regular* (non-sudo) validator and **bound on-chain to one function selector: `doRecovery(validator, data)`**. Kernel enforces this binding in the smart account itself: a recovery-signed operation that calls anything else (a transfer, an approval, a module change) is rejected by the account, not by our app. Vaults created before the partner existed use the legacy 2-of-2 (backup 50 + Swissquote 50); the app reads each Vault's real configuration from the chain.
+The recovery keys form a weighted validator installed as a *regular* (non-sudo) validator and **bound on-chain to one function selector: `doRecovery(validator, data)`**. Kernel enforces this binding in the smart account itself: a recovery-signed operation that calls anything else (a transfer, an approval, a module change) is rejected by the account, not by our app. Vaults created before the partner existed use the legacy 2-of-2 (backup 50 + Swissquote 50); the app tells the two apart by the number of keys in the Vault's on-chain recovery header.
 
 `doRecovery` re-initialises the passkey validator with a new public key. Be precise about what that means: recovery keys can never move funds **directly**, but whoever completes a recovery installs a passkey and so controls the account afterwards. That is inherent to any recovery scheme. Our protections are about making sure no attacker ever completes one: the client's backup key is always required (on-chain), the guardians each verify the client's backup approval against the chain before co-signing, they re-check identity, and every recovery runs through a waiting period during which the client's devices are alerted and can cancel.
 
@@ -79,7 +79,7 @@ No, and this is enforced on-chain, not by policy. Swissquote's key (40) and the 
 | Sign | Gasless ERC-4337 user operation signed by the passkey; the paymaster pays the fee | `sendUsdc`, `sendCalls` |
 | Activate | Right after creation, one sponsored operation deploys the account and installs the recovery validator + recovery action, so the Vault is recoverable from day one | `activateWallet`, `pluginMigrations` |
 | Lose access | Phone lost / wiped / stolen | – |
-| Recover | New device: new passkey → Swissquote login → recovery request (old devices alerted, delay starts) → backup key checked against the registered one and approves → after the delay Swissquote verifies that approval and co-signs → `doRecovery`. **Same address, same funds** | `app/src/lib/recovery.ts`, `server/guardian.ts`, `server/index.ts` |
+| Recover | New device: Swissquote login → new passkey → recovery request (old devices alerted, delay starts) → backup key checked against the registered one and approves → after the delay Swissquote verifies that approval and co-signs → `doRecovery`. **Same address, same funds** | `app/src/lib/recovery.ts`, `server/guardian.ts`, `server/index.ts` |
 | Recover without Swissquote | Same, with the partner instead: backup kit + identity check at the partner + longer delay | `PartnerRecover.tsx`, `server/partner.ts` |
 | Veto | During the delay, any device holding the current passkey shows "Someone is recovering this Vault" and cancels with a passkey-signed message (verified on-chain), at Swissquote or the partner | `Dashboard.tsx` banner |
 

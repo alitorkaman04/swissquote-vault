@@ -21,11 +21,11 @@ import { appendActivity } from "../lib/activity"
  * Lost-phone recovery, as the client experiences it on a NEW device:
  *   1. new passkey            (this device)
  *   2. request to Swissquote  (bank verifies identity, notifies old devices, starts the delay)
- *   3. backup key signature   (checked against the Vault's recovery keys ON-CHAIN first)
+ *   3. backup key signature   (checked against the registered backup key and the on-chain recovery header first)
  *   4. bank signature         (after the delay, unless the old device cancelled; the bank
  *                              verifies the backup approval before it co-signs)
  * Includes a demo of the bonus scenario: an attacker with the stolen phone and email inbox
- * is refused, both by the on-chain key check and by Swissquote.
+ * is refused, both by the backup-key check and by Swissquote.
  *   5. on-chain: passkey replaced, same Vault address, same funds
  */
 export function Recover({
@@ -100,7 +100,7 @@ export function Recover({
     run(async () => {
       if (!prepared) throw new Error("no prepared passkey")
       setAttack(null)
-      // Checked against the Vault's recovery keys on-chain before anything is signed.
+      // Checked against the registered backup key and the on-chain recovery header before anything is signed.
       const check = await checkBackupKey(existing.walletAddress, backupKey, await knownKeys())
       if (!check.ok) throw new Error(check.reason)
       const res = await approveWithBackupKey(existing.walletAddress, check.setup, check.key, prepared.callData)
@@ -235,8 +235,8 @@ export function Recover({
             <>
               <Countdown secondsLeft={secondsLeft} total={total} />
               <p className="hint center-text">
-                <span className="mock-tag">MOCK</span> Delay enforced by the mock Swissquote guardian. Your old devices can cancel during this time. A thief holding your old phone would need your Face ID or
-                your e-banking login to cancel — they have neither.
+                <span className="mock-tag">MOCK</span> Delay enforced by the mock Swissquote guardian. Your old devices can cancel during this time. A thief holding your old phone would need your Face ID (or
+                your e-banking login) to cancel.
               </p>
             </>
           )}

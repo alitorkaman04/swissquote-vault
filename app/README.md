@@ -5,7 +5,7 @@ gasless USDC transfers, compliance checks, and bank-assisted (but not bank-contr
 
 ## Run it
 
-Requirements: Node.js 20+ and a free [ZeroDev](https://dashboard.zerodev.app) project on Base Sepolia
+Requirements: Node.js 22.12+ and a free [ZeroDev](https://dashboard.zerodev.app) project on Base Sepolia
 (ZeroDev provides the bundler, the gas-sponsoring paymaster and the passkey server).
 
 ```bash
@@ -21,7 +21,7 @@ Test USDC for Base Sepolia: https://faucet.circle.com
 
 **Keep `app/server/data.json` and `app/server/partner-data.json`.** They hold the two guardian keys (each in its own
 process's storage): deleting one makes every wallet created so far unrecoverable through that guardian (their on-chain
-recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` / `PARTNER_PRIVATE_KEY` in `.env`.
+recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PRIVATE_KEY` / `PARTNER_PRIVATE_KEY` in `.env` (only used when the data file doesn't exist yet).
 
 ## Demo script (what the judges see)
 
@@ -34,7 +34,7 @@ recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PR
 5. **Apps** → approved dApp list; connecting runs a real on-chain approval; unknown apps are blocked.
 6. **Security → Simulate losing this phone**, then on a *new device* (a private browser window works):
    sign in to Swissquote → "I lost my phone" → new passkey → countdown starts and the **old device sees a cancel banner** → enter backup key → when the delay ends the bank co-signs → passkey replaced on-chain, same address, same funds.
-   - **"Demo: try as a thief with the phone + email"** on the backup-key step: a random key is refused on-chain and Swissquote refuses to co-sign.
+   - **"Demo: try as a thief with the phone + email"** on the backup-key step: a random key is refused (it isn't the Vault's registered backup key) and Swissquote refuses to co-sign.
 7. **Security → Switch Swissquote off** (dev builds): really stops the mock bank. The Vault keeps signing ("Open my Vault without Swissquote"), and a lost phone is recovered with the backup kit + the independent partner. Restart the bank with `npm run bank`.
 
 ## How it works

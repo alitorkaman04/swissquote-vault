@@ -5,11 +5,11 @@
  * Each runs as its own process with its own key and its own storage; the client app never
  * holds either key.
  *
- * Before co-signing, a guardian checks three things against the BLOCKCHAIN, not against its
- * own database: (1) the request is a `doRecovery` call, (2) the client's backup approval is a
- * genuine signature from one of this Vault's recovery keys, and (3) that approval plus its own
- * weight reaches the threshold. So a guardian never helps a request that the chain would refuse,
- * and two guardians together (40 + 40) are refused even before they reach the chain.
+ * Before co-signing, a guardian checks: (1) the request is a `doRecovery` call, (2) the client's
+ * approval is signed by the backup address registered at creation, for this Vault's current recovery
+ * nonce, and (3) the Vault's on-chain recovery header (installed, number of keys, total weight) matches
+ * the registered keys, and the approval plus its own weight reaches the threshold. Two guardians
+ * together (40 + 40) are refused before anything reaches the chain.
  */
 import { createKernelAccount } from "@zerodev/sdk"
 import { getEntryPoint, KERNEL_V3_1 } from "@zerodev/sdk/constants"
@@ -66,7 +66,7 @@ export class Refused extends Error {
 async function setupFor(guardian: LocalAccount, wallet: Address, known: KnownKeys) {
   let setup
   try {
-    setup = await readRecoverySetup(publicClient, wallet, known)
+    setup = await readRecoverySetup(publicClient, wallet, known, { strict: true })
   } catch (e) {
     throw new Refused((e as Error).message)
   }
