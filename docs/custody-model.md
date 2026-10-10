@@ -60,7 +60,7 @@ No, and this is enforced on-chain, not by policy. Swissquote's key (40) and the 
 | Client without phone, Swissquote gone | ❌ | ✅ backup key + partner (identity + longer delay) | Escape hatch, demoed |
 | Swissquote alone | ❌ | ❌ | 40 < 100 |
 | Swissquote + partner | ❌ | ❌ | 80 < 100, enforced on-chain |
-| Thief with phone + email | ❌ | ❌ | No Face ID, no backup key; their key is not among the on-chain recovery keys, and Swissquote refuses to co-sign (demoed) |
+| Thief with phone + email | ❌ | ❌ | No Face ID, no backup key; their key is not the Vault's backup key, and Swissquote refuses to co-sign (demoed) |
 | Thief with backup kit only | ❌ | ❌ | Needs a guardian, who re-checks identity, plus the veto window |
 | Backup kit + a guardian's cooperation | ⚠️ only indirectly, by replacing the passkey | ⚠️ after the delay; the client's devices are alerted and can cancel | Threat model T6 |
 
@@ -79,7 +79,7 @@ No, and this is enforced on-chain, not by policy. Swissquote's key (40) and the 
 | Sign | Gasless ERC-4337 user operation signed by the passkey; the paymaster pays the fee | `sendUsdc`, `sendCalls` |
 | Activate | Right after creation, one sponsored operation deploys the account and installs the recovery validator + recovery action, so the Vault is recoverable from day one | `activateWallet`, `pluginMigrations` |
 | Lose access | Phone lost / wiped / stolen | – |
-| Recover | New device: new passkey → Swissquote login → recovery request (old devices alerted, delay starts) → backup key checked against the on-chain recovery keys and approves → after the delay Swissquote verifies that approval and co-signs → `doRecovery`. **Same address, same funds** | `app/src/lib/recovery.ts`, `server/guardian.ts`, `server/index.ts` |
+| Recover | New device: new passkey → Swissquote login → recovery request (old devices alerted, delay starts) → backup key checked against the registered one and approves → after the delay Swissquote verifies that approval and co-signs → `doRecovery`. **Same address, same funds** | `app/src/lib/recovery.ts`, `server/guardian.ts`, `server/index.ts` |
 | Recover without Swissquote | Same, with the partner instead: backup kit + identity check at the partner + longer delay | `PartnerRecover.tsx`, `server/partner.ts` |
 | Veto | During the delay, any device holding the current passkey shows "Someone is recovering this Vault" and cancels with a passkey-signed message (verified on-chain), at Swissquote or the partner | `Dashboard.tsx` banner |
 

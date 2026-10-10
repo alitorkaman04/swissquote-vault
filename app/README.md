@@ -58,7 +58,7 @@ recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PR
 ```
 
 - `src/lib/wallet.ts` — create / login / resume, balances, gasless transfers
-- `src/lib/onchainRecovery.ts` — the recovery rules: weights, reading the Vault's recovery keys from the chain, verifying approvals
+- `src/lib/onchainRecovery.ts` — the recovery rules: weights, checking the Vault's on-chain recovery setup, verifying approvals
 - `src/lib/recovery.ts` — new passkey → backup-key check → recovery user operation
 - `src/lib/bank.ts`, `src/lib/partner.ts` — clients for the two mock services
 - `server/index.ts`, `server/partner.ts` — the two mock services (clearly marked; see `docs/mocks.md`)

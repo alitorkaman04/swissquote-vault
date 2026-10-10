@@ -16,8 +16,8 @@ Recovery keys can do exactly one thing, enforced on-chain: install a new passkey
 **client backup key 60, Swissquote 40, an independent recovery partner 40, threshold 100**. The client's backup key is
 always required; Swissquote alone, or Swissquote together with the partner (80), can never move or recover the funds, so
 the bank is not a custodian; the client alone can transact. Losing a phone is recoverable, even if Swissquote is gone
-(backup + partner); stealing a phone and the email inbox gets an attacker nothing (their key is not among the Vault's
-on-chain recovery keys, and Swissquote refuses to co-sign; shown live).
+(backup + partner); stealing a phone and the email inbox gets an attacker nothing (their key is not the Vault's
+backup key, which the on-chain recovery rules require, and Swissquote refuses to co-sign; shown live).
 
 ## What it looks like
 
@@ -59,7 +59,7 @@ on-chain recovery keys, and Swissquote refuses to co-sign; shown live).
 | **UX & pitch (15)** | Phone-shaped app, plain-language copy, no seed phrase; deck + script in `docs/pitch.md` |
 | **Bonus: gasless** | Every operation sponsored by the paymaster; client never holds ETH (Send tab: "Paid by Swissquote"). Who pays and abuse prevention: `docs/architecture.md` |
 | **Bonus: compliant dApp interaction** | Approved-dApp list, unknown sites blocked, limited approvals with on-chain allowance + revoke, sanctions screening, simulation, 2FA step-up above 1,000 USDC |
-| **Bonus: recovery that refuses an attacker with the stolen phone and email** | Live: Recover → "Demo: try as a thief" → the key is checked against the Vault's on-chain recovery keys and refused, and Swissquote refuses to co-sign. Plus waiting period and passkey-signed veto (`docs/threat-model.md`) |
+| **Bonus: recovery that refuses an attacker with the stolen phone and email** | Live: Recover → "Demo: try as a thief" → the key is not the Vault's backup key and is refused, and Swissquote refuses to co-sign. Plus waiting period and passkey-signed veto (`docs/threat-model.md`) |
 | **Bonus: Swiss regulatory considerations** | `docs/legal-swiss.md`, ownership proof in-app |
 | **What is mocked** (required disclosure) | `docs/mocks.md` |
 

@@ -46,6 +46,7 @@ export function BackupKit({ wallet, backupPrivateKey, onDone }: { wallet: Wallet
           "If Swissquote is ever unreachable or gone: open Vault, choose 'Swissquote unreachable?',",
           "then 'Recover with the partner'. This kit plus the independent recovery partner restore access.",
           `Recovery partner key : ${wallet.session.partnerAddress} (independent of Swissquote)`,
+          `Swissquote guardian  : ${wallet.session.bankGuardianAddress} (public address, for reference)`,
         ]
       : []),
   ].join("\n")

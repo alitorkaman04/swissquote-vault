@@ -15,8 +15,8 @@ storage, while the client app never holds its share.** Here is how Vault complie
 | Gasless transfers (paymaster) | **Real** | ZeroDev paymaster sponsors gas; in production Swissquote funds the paymaster |
 | USDC transfers | **Real** | Circle test USDC on Base Sepolia |
 | Recovery validator (weighted: backup 60, Swissquote 40, partner 40, threshold 100, bound to `doRecovery`) | **Real** | On-chain; every signature is a genuine ECDSA approval verified by the validator contract |
-| Guardians' checks before co-signing | **Real** | Each guardian reads the Vault's recovery keys from the chain and verifies that the client's backup key signed exactly this recovery (`server/guardian.ts`) |
-| Backup-key check on the recovery screen | **Real** | The entered key is checked against the on-chain recovery keys; the attacker demo shows a refusal |
+| Guardians' checks before co-signing | **Real** | Each guardian checks the Vault's recovery setup on-chain (installed, number of keys, weights) against the public addresses registered at creation, and verifies that the client's backup key signed exactly this recovery (`server/guardian.ts`) |
+| Backup-key check on the recovery screen | **Real** | The entered key must be the Vault's registered backup key, and the on-chain recovery setup must match; the attacker demo shows a refusal |
 | Independent recovery partner | **Mock** | `server/partner.ts`, separate process, own key and storage. Fictional Swiss trust company. Identity check = client number (production: video identification against an escrowed KYC file); 45 s waiting period (production: 30 days) |
 | "Switch Swissquote off" (demo) | **Real process stop** | Development builds only; really stops the mock bank process (localhost only). The Vault keeps signing; recovery goes through the partner |
 | Swissquote e-banking login + 2FA | **Mock** | `server/index.ts`; any client id, password `demo`, code `000000` |

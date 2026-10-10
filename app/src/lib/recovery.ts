@@ -5,7 +5,7 @@
  *   1. enrol a NEW passkey,
  *   2. log in to their Swissquote account (bank-grade identity check) and request recovery
  *      - or, if Swissquote is gone, go to the independent recovery partner instead,
- *   3. provide their backup key (from the printed/exported backup kit), checked against the recovery keys read from the chain,
+ *   3. provide their backup key (from the printed/exported backup kit), checked against the registered backup key,
  *   4. the guardian (Swissquote or the partner) verifies the backup approval, notifies the
  *      old device, waits out the delay, then co-signs if nobody cancelled,
  *   5. the recovery user operation (backup + one guardian = threshold) replaces the passkey on-chain.
@@ -32,7 +32,7 @@ import {
   approvalHash,
   configFromSetup,
   readRecoverySetup,
-  weightOf,
+  type KnownKeys,
   type RecoverySetup,
 } from "./onchainRecovery"
 import { createZeroDevPaymasterClient } from "@zerodev/sdk"
@@ -67,7 +67,7 @@ export async function prepareNewPasskey(newPasskeyName: string) {
  * is signed or sent. This is where an attacker with a stolen phone and inbox is refused:
  * neither holds the backup key, and no other key is accepted by the validator contract.
  */
-export async function checkBackupKey(walletAddress: Address, backupPrivateKey: string) {
+export async function checkBackupKey(walletAddress: Address, backupPrivateKey: string, known: KnownKeys) {
   // Accept the bare key, the grouped key as printed on the kit, or the whole pasted kit text.
   const text = backupPrivateKey.trim()
   const fromKit = text.match(/Backup key\s*:\s*(0x[0-9a-fA-F]{64})/)?.[1]
@@ -76,18 +76,17 @@ export async function checkBackupKey(walletAddress: Address, backupPrivateKey: s
   if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
     return { ok: false as const, reason: "That doesn’t look like a backup key (0x + 64 hex characters)." }
   }
-  const setup = await readRecoverySetup(publicClient, walletAddress)
-  if (!setup) {
-    return { ok: false as const, reason: "Recovery isn’t switched on for this Vault yet: it was never activated on-chain." }
-  }
   const address = privateKeyToAccount(key as Hex).address
-  const weight = weightOf(setup, address)
-  if (weight === 0) {
+  if (address.toLowerCase() !== known.backup.toLowerCase()) {
     return {
       ok: false as const,
       refused: true,
-      reason: `Refused. ${address.slice(0, 8)}… is not one of this Vault’s ${setup.signers.length} recovery keys on Base Sepolia.`,
+      reason: `Refused. ${address.slice(0, 8)}… is not this Vault’s backup key, and the Vault’s recovery rules on Base Sepolia accept no other.`,
     }
+  }
+  const setup = await readRecoverySetup(publicClient, walletAddress, known)
+  if (!setup) {
+    return { ok: false as const, reason: "Recovery isn’t switched on for this Vault yet: it was never activated on-chain." }
   }
   return { ok: true as const, setup, address, key: key as Hex }
 }

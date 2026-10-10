@@ -8,8 +8,10 @@ import {
   canRecover,
   recoverApprovalSigner,
   recoveryConfig,
+  signerIndex,
   type RecoverySetup,
 } from "../src/lib/onchainRecovery"
+import { sortByPublicKey } from "@zerodev/weighted-validator"
 
 const backup = privateKeyToAccount(generatePrivateKey())
 const swissquote = privateKeyToAccount(generatePrivateKey())
@@ -41,6 +43,13 @@ describe("recovery rules (what the validator contract enforces)", () => {
   })
   it("ignores keys that are not recovery keys (the thief's)", () => {
     expect(canRecover(setup, [stranger.address, swissquote.address, partner.address])).toBe(false)
+  })
+})
+
+describe("signer indices", () => {
+  it("match the order the ZeroDev SDK installs and signs with", () => {
+    const sdkOrder = config.signers.map((x) => ({ publicKey: (x.publicKey as string).toLowerCase() as `0x${string}` })).sort(sortByPublicKey)
+    sdkOrder.forEach((x, i) => expect(signerIndex(setup, x.publicKey)).toBe(i))
   })
 })
 

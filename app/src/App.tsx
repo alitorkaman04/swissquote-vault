@@ -375,7 +375,10 @@ export function Onboard({
         partnerAddress: partnerInfo.address,
         passkeyName: wallet.session.passkeyName,
       })
-      await partner.register(wallet.session.address, bankSession.clientId)
+      await partner.register(wallet.session.address, bankSession.clientId, {
+        backupAddress: wallet.session.backupAddress,
+        swissquoteAddress: guardian,
+      })
       onCreated(wallet, backupPrivateKey)
     } catch (e) {
       setErr(errorMessage(e))

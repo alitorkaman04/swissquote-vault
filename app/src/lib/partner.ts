@@ -25,8 +25,12 @@ export type PartnerRecovery = {
 export const partner = {
   guardian: () => api<{ address: Address; name: string; delaySeconds: number }>("/guardian"),
 
-  /** Onboarding: register the Vault (public address) and the holder's identity reference. */
-  register: (walletAddress: Address, holder: string) => api<{ ok: true }>("/register", post({ walletAddress, holder })),
+  /** Onboarding: register the Vault, its public recovery addresses and the holder's identity reference. */
+  register: (walletAddress: Address, holder: string, keys: { backupAddress: Address; swissquoteAddress: Address }) =>
+    api<{ ok: true }>("/register", post({ walletAddress, holder, ...keys })),
+
+  /** The public recovery addresses registered for a Vault (needed when Swissquote is gone). */
+  vault: (walletAddress: Address) => api<{ backupAddress: Address; swissquoteAddress: Address }>(`/vault/${walletAddress}`),
 
   /** Ask for recovery: identity + the client's backup approval, verified by the partner against the chain. */
   requestRecovery: (body: { walletAddress: Address; holder: string; callData: Hex; newPasskeyName: string; backupApproval: Hex }) =>

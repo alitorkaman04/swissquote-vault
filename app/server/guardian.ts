@@ -28,7 +28,9 @@ import {
   readRecoverySetup,
   recoverApprovalSigner,
   recoveryNonce,
+  signerIndex,
   weightOf,
+  type KnownKeys,
 } from "../src/lib/onchainRecovery.js"
 
 export const CHAIN = baseSepolia
@@ -61,11 +63,21 @@ export class Refused extends Error {
   status = 403
 }
 
-/** The Vault's recovery account, seen by one guardian. */
-async function recoveryAccount(guardian: LocalAccount, wallet: Address) {
-  const setup = await readRecoverySetup(publicClient, wallet)
+async function setupFor(guardian: LocalAccount, wallet: Address, known: KnownKeys) {
+  let setup
+  try {
+    setup = await readRecoverySetup(publicClient, wallet, known)
+  } catch (e) {
+    throw new Refused((e as Error).message)
+  }
   if (!setup) throw new Refused("recovery is not installed on this Vault (never activated)")
   if (weightOf(setup, guardian.address) === 0) throw new Refused("this guardian is not a recovery key of this Vault")
+  return setup
+}
+
+/** The Vault's recovery account, seen by one guardian. */
+async function recoveryAccount(guardian: LocalAccount, wallet: Address, known: KnownKeys) {
+  const setup = await setupFor(guardian, wallet, known)
   const validator = await createWeightedValidator(publicClient, {
     entryPoint: ENTRY_POINT,
     kernelVersion: KERNEL_V3_1,
@@ -84,24 +96,22 @@ async function recoveryAccount(guardian: LocalAccount, wallet: Address) {
 
 /**
  * Verifies the client's backup approval for this exact recovery. Throws `Refused` with a
- * plain-language reason when it doesn't come from the client's backup key.
+ * plain-language reason when it doesn't come from the client's registered backup key.
+ * `known` = the Vault's public recovery addresses on this guardian's file.
  */
-export async function verifyClientApproval(guardian: LocalAccount, wallet: Address, callData: Hex, approval: unknown) {
+export async function verifyClientApproval(guardian: LocalAccount, wallet: Address, callData: Hex, approval: unknown, known: KnownKeys) {
   if (typeof approval !== "string" || !/^0x[0-9a-fA-F]{132}$/.test(approval)) {
     throw new Refused("no valid backup-key approval attached: the client's backup key must approve this recovery first")
   }
-  const setup = await readRecoverySetup(publicClient, wallet)
-  if (!setup) throw new Refused("recovery is not installed on this Vault (never activated)")
-  if (weightOf(setup, guardian.address) === 0) throw new Refused("this guardian is not a recovery key of this Vault")
+  const setup = await setupFor(guardian, wallet, known)
   const nonce = await recoveryNonce(publicClient, wallet)
   const { index, signer } = await recoverApprovalSigner({ approval: approval as Hex, wallet, callData, nonce, chainId: CHAIN.id })
-  if (weightOf(setup, signer) === 0) {
-    console.log(`  approval check: recovered ${signer} with nonce ${nonce}; not a recovery key`)
-    throw new Refused("the approval is not signed by a recovery key of this Vault")
+  if (signer.toLowerCase() !== known.backup.toLowerCase()) {
+    console.log(`  approval check: recovered ${signer} with nonce ${nonce}; the backup key on file is ${known.backup}`)
+    throw new Refused("the approval is not signed by this Vault's backup key")
   }
   // The contract finds the signer by this index: a mismatch would only fail later, on-chain.
-  if (setup.signers[index]?.address.toLowerCase() !== signer.toLowerCase()) throw new Refused("approval signer index mismatch")
-  if (signer.toLowerCase() === guardian.address.toLowerCase()) throw new Refused("the approval must come from the client")
+  if (signerIndex(setup, signer) !== index) throw new Refused("approval signer index mismatch")
   if (!canRecover(setup, [signer, guardian.address])) {
     throw new Refused("the approving key plus this guardian don't reach the threshold: the client's backup key is required")
   }
@@ -109,8 +119,8 @@ export async function verifyClientApproval(guardian: LocalAccount, wallet: Addre
 }
 
 /** The guardian's one cryptographic act: approve this recovery user operation with its key. */
-export async function coSign(guardian: LocalAccount, wallet: Address, callData: Hex): Promise<Hex> {
-  const { account } = await recoveryAccount(guardian, wallet)
+export async function coSign(guardian: LocalAccount, wallet: Address, callData: Hex, known: KnownKeys): Promise<Hex> {
+  const { account } = await recoveryAccount(guardian, wallet, known)
   const client = createWeightedKernelAccountClient({
     account,
     chain: CHAIN,

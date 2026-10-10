@@ -11,7 +11,7 @@
  * Everything is stored in server/data.json. The bank key is a demo key.
  * What is real: the bank's signature is a genuine ECDSA approval of the recovery user
  * operation, verified on-chain by the weighted validator - and before giving it, the bank
- * checks the client's backup-key approval against the Vault's on-chain recovery keys
+ * checks the client's backup-key approval (registered backup key, on-chain recovery setup)
  * (server/guardian.ts). The independent recovery partner is a SEPARATE process
  * (server/partner.ts) with its own key and storage.
  */
@@ -277,15 +277,18 @@ app.post("/recovery/:id/sign", async (req, res) => {
   if (r.status === "cancelled") return res.status(409).send("recovery was cancelled")
   try {
     // Checked FIRST, before the delay: a login (e.g. via a stolen inbox) is never enough.
-    // The client's backup key must have approved exactly this recovery (verified against the chain).
-    await verifyClientApproval(bankAccount, r.walletAddress, r.callData, req.body?.backupApproval)
+    // The client's backup key must have approved exactly this recovery (checked against the backup key on file and the Vault's on-chain recovery header).
+    const c = db.clients[r.clientId]
+    if (!c.backupAddress) throw new Refused("no backup key on file for this client")
+    const known = { backup: c.backupAddress, swissquote: bankAccount.address, partner: c.partnerAddress }
+    await verifyClientApproval(bankAccount, r.walletAddress, r.callData, req.body?.backupApproval, known)
     if (r.status === "pending") return res.status(425).send(`delay not elapsed, ${Math.ceil((r.unlockAt - Date.now()) / 1000)}s left`)
     if (r.bankSignature) return res.json({ signature: r.bankSignature })
-    const signature = await coSign(bankAccount, r.walletAddress, r.callData)
+    const signature = await coSign(bankAccount, r.walletAddress, r.callData, known)
     r.bankSignature = signature
     r.status = "signed"
     save(db)
-    console.log(`[recovery] ${r.id} backup approval verified on-chain; co-signed by Swissquote guardian`)
+    console.log(`[recovery] ${r.id} backup approval verified; co-signed by Swissquote guardian`)
     res.json({ signature })
   } catch (e: any) {
     if (e instanceof Refused) {

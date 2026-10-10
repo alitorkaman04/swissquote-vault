@@ -46,7 +46,7 @@ type Recovery = {
 type Data = {
   partnerPrivateKey: Hex
   /** Vaults registered at onboarding, with the identity the partner re-verifies (escrowed KYC in production). */
-  vaults: Record<string, { holder: string; registeredAt: number }>
+  vaults: Record<string, { holder: string; registeredAt: number; backupAddress?: Address; swissquoteAddress?: Address }>
   recoveries: Record<string, Recovery & { token: string }>
 }
 
@@ -71,6 +71,7 @@ function refresh(r: Recovery) {
   if (r.status === "pending" && Date.now() >= r.unlockAt) r.status = "ready"
   return r
 }
+const partnerKnown = (v: Data["vaults"][string]) => ({ backup: v.backupAddress!, swissquote: v.swissquoteAddress!, partner: partnerAccount.address })
 const publicView = ({ token: _t, ...r }: Recovery & { token: string }) => ({ ...refresh(r), via: "partner" as const })
 
 console.log(`Independent recovery partner (MOCK)  http://localhost:${PORT}`)
@@ -86,17 +87,30 @@ app.get("/guardian", (_req, res) => res.json({ address: partnerAccount.address, 
 
 // Onboarding: the client registers their Vault with the partner (public address + identity reference).
 app.post("/register", (req, res) => {
-  const { walletAddress, holder } = req.body ?? {}
+  const { walletAddress, holder, backupAddress, swissquoteAddress } = req.body ?? {}
   if (!isAddress(walletAddress) || typeof holder !== "string" || !holder.trim()) return res.status(400).send("bad registration")
+  if (!isAddress(backupAddress) || !isAddress(swissquoteAddress)) return res.status(400).send("bad recovery addresses")
   const existing = db.vaults[key(walletAddress)]
   // First registration wins: nobody can re-register a Vault under another identity later.
   if (existing && existing.holder.toLowerCase() !== holder.trim().toLowerCase()) {
     return res.status(409).send("this Vault is already registered to another holder")
   }
-  db.vaults[key(walletAddress)] = { holder: holder.trim(), registeredAt: existing?.registeredAt ?? Date.now() }
+  db.vaults[key(walletAddress)] = {
+    holder: holder.trim(),
+    registeredAt: existing?.registeredAt ?? Date.now(),
+    backupAddress: getAddress(backupAddress),
+    swissquoteAddress: getAddress(swissquoteAddress),
+  }
   save(db)
   console.log(`[partner] registered ${walletAddress} for ${holder.trim()}`)
   res.json({ ok: true })
+})
+
+// Public recovery addresses of a registered Vault (no identity data).
+app.get("/vault/:address", (req, res) => {
+  const v = db.vaults[key(req.params.address)]
+  if (!v?.backupAddress || !v.swissquoteAddress) return res.status(404).send("not registered")
+  res.json({ backupAddress: v.backupAddress, swissquoteAddress: v.swissquoteAddress })
 })
 
 // The client asks the partner to co-sign a recovery. Requires: a registered Vault, the holder's identity
@@ -112,7 +126,8 @@ app.post("/recovery/request", async (req, res) => {
       throw new Refused("identity check failed: you are not the registered holder of this Vault")
     }
     if (!isDoRecovery(callData)) return res.status(400).send("recovery request must be a doRecovery call")
-    await verifyClientApproval(partnerAccount, getAddress(walletAddress), callData, backupApproval)
+    if (!vault.backupAddress || !vault.swissquoteAddress) throw new Refused("this Vault was registered without its recovery addresses")
+    await verifyClientApproval(partnerAccount, getAddress(walletAddress), callData, backupApproval, partnerKnown(vault))
     for (const r of Object.values(db.recoveries)) {
       if (key(r.walletAddress) === key(walletAddress) && ["pending", "ready"].includes(refresh(r).status)) r.status = "cancelled"
     }
@@ -176,7 +191,9 @@ app.post("/recovery/:id/sign", async (req, res) => {
   if (r.status === "pending") return res.status(425).send(`waiting period not over, ${Math.ceil((r.unlockAt - Date.now()) / 1000)}s left`)
   if (r.partnerSignature) return res.json({ signature: r.partnerSignature })
   try {
-    const signature = await coSign(partnerAccount, r.walletAddress, r.callData)
+    const vault = db.vaults[key(r.walletAddress)]
+    if (!vault?.backupAddress || !vault.swissquoteAddress) throw new Refused("this Vault was registered without its recovery addresses")
+    const signature = await coSign(partnerAccount, r.walletAddress, r.callData, partnerKnown(vault))
     r.partnerSignature = signature
     r.status = "signed"
     save(db)

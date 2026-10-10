@@ -25,7 +25,6 @@ import {
   parseAbiParameters,
   recoverTypedDataAddress,
   sliceHex,
-  size,
 } from "viem"
 import { readContract } from "viem/actions"
 import { entryPoint07Address } from "viem/account-abstraction"
@@ -80,28 +79,46 @@ export function configFromSetup(setup: RecoverySetup): WeightedValidatorConfig {
 
 const WEIGHTED_ABI = parseAbi([
   "function weightedStorage(address kernel) view returns (uint24 totalWeight, uint24 threshold, uint48 delay, uint32 guardianLength)",
-  "function guardian(uint256 guardianIndex, address kernel) view returns (bytes1 guardianType, uint24 weight, bytes encodedPublicKey)",
 ])
 
+/** The public recovery addresses on file for a Vault (registered at creation; never secrets). */
+export type KnownKeys = { backup: Address; swissquote: Address; partner?: Address | null }
+
 /**
- * Reads the Vault's recovery keys straight from the validator contract.
- * Returns null when recovery is not installed yet (the Vault was never activated).
+ * The Vault's recovery keys and weights. The validator's header is read from the chain (is recovery
+ * installed? how many keys, what total weight?) and must match the public addresses registered at
+ * creation. Returns null when recovery is not installed yet (the Vault was never activated).
+ * Note: the validator's per-guardian getter doesn't decode with the SDK's published ABI, so the keys
+ * themselves come from the registration; the contract still enforces them on every recovery.
  */
-export async function readRecoverySetup(client: Client, wallet: Address): Promise<RecoverySetup | null> {
-  const [, threshold, , length] = await readContract(client, {
-    address: WEIGHTED_VALIDATOR_ADDRESS,
-    abi: WEIGHTED_ABI,
-    functionName: "weightedStorage",
-    args: [wallet],
-  })
-  if (threshold === 0 || length === 0) return null
-  const signers = await Promise.all(
-    Array.from({ length }, (_, i) =>
-      readContract(client, { address: WEIGHTED_VALIDATOR_ADDRESS, abi: WEIGHTED_ABI, functionName: "guardian", args: [BigInt(i), wallet] })
-        .then(([, weight, key]) => ({ address: getAddress(size(key) === 20 ? key : sliceHex(key, 0, 20)), weight: Number(weight) })),
-    ),
-  )
-  return { threshold: Number(threshold), signers }
+export async function readRecoverySetup(client: Client, wallet: Address, known: KnownKeys): Promise<RecoverySetup | null> {
+  let header: { total: number; threshold: number; count: number } | null = null
+  try {
+    const [total, threshold, , count] = await readContract(client, {
+      address: WEIGHTED_VALIDATOR_ADDRESS,
+      abi: WEIGHTED_ABI,
+      functionName: "weightedStorage",
+      args: [wallet],
+    })
+    header = { total: Number(total), threshold: Number(threshold), count: Number(count) }
+  } catch (e) {
+    console.warn("could not read the recovery header; using the registered configuration", e)
+  }
+  if (header && (header.threshold === 0 || header.count === 0)) return null
+  const withPartner = header ? header.count === 3 : Boolean(known.partner)
+  if (withPartner && !known.partner) throw new Error("this Vault has a recovery partner, but its address is not on file")
+  const config = withPartner ? recoveryConfig(known.swissquote, known.backup, known.partner!) : recoveryConfig(known.swissquote, known.backup)
+  const total = config.signers.reduce((sum, s) => sum + s.weight, 0)
+  if (header && (header.total !== total || header.threshold !== config.threshold || header.count !== config.signers.length)) {
+    throw new Error("the recovery configuration on-chain doesn't match the keys on file for this Vault")
+  }
+  return { threshold: config.threshold, signers: config.signers.map((x) => ({ address: getAddress(x.publicKey as Address), weight: x.weight })) }
+}
+
+/** A signer's index as the weighted validator numbers them (addresses sorted descending, as the SDK does). */
+export function signerIndex(setup: RecoverySetup, key: Address): number {
+  const sorted = setup.signers.map((x) => x.address.toLowerCase()).sort((a, b) => (a < b ? 1 : -1))
+  return sorted.indexOf(key.toLowerCase())
 }
 
 const ENTRY_POINT_ABI = parseAbi(["function getNonce(address sender, uint192 key) view returns (uint256)"])

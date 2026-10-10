@@ -14,12 +14,12 @@ flowchart LR
 
   subgraph SQ["Swissquote · process 1 (server/index.ts) [MOCK]"]
     ID["e-banking identity + 2FA [MOCK]"]
-    GS["Guardian service, weight 40 [MOCK key store]<br/>checks backup approval against on-chain keys<br/>delay + alerts + veto"]
+    GS["Guardian service, weight 40 [MOCK key store]<br/>verifies the client's backup approval<br/>delay + alerts + veto"]
     CP["Compliance [MOCK lists]<br/>sanctions screening, limits,<br/>approved dApp list"]
   end
 
   subgraph PA["Independent partner · process 2 (server/partner.ts) [MOCK]"]
-    PG["Partner guardian, weight 40<br/>identity check [MOCK], 30-day delay,<br/>checks backup approval against on-chain keys"]
+    PG["Partner guardian, weight 40<br/>identity check [MOCK], 30-day delay,<br/>verifies the client's backup approval"]
   end
 
   subgraph ZD["Account-abstraction infra (ZeroDev)"]
@@ -43,8 +43,8 @@ flowchart LR
   BK -. backup approval .-> APP
   GS -. co-signature .-> APP
   PG -. co-signature .-> APP
-  GS -. reads recovery keys .-> K
-  PG -. reads recovery keys .-> K
+  GS -. reads recovery setup .-> K
+  PG -. reads recovery setup .-> K
   K -- transfer --> USDC
 ```
 
@@ -60,7 +60,7 @@ flowchart LR
 | Passkey server | Real (ZeroDev) | Stores passkey **public** keys so a client can log in by name on any device. Production: self-hosted by Swissquote |
 | e-banking login, Swissquote guardian, compliance | **Mocked** (`app/server/index.ts`, process 1, `data.json`) | See `mocks.md`. The guardian's co-signature and its on-chain checks are real |
 | Independent recovery partner | **Mocked** (`app/server/partner.ts`, process 2, `partner-data.json`) | Fictional Swiss trust company. Identity check mocked; co-signature and on-chain checks real |
-| Guardian checks shared by both | Real (`app/server/guardian.ts`) | Read the Vault's recovery keys from the chain; verify the backup approval; refuse if it doesn't reach the threshold |
+| Guardian checks shared by both | Real (`app/server/guardian.ts`) | Check the Vault's on-chain recovery setup against the registered public addresses; verify the backup approval; refuse if it doesn't reach the threshold |
 
 No custom smart contracts and no custom cryptography: everything on-chain is ZeroDev's Kernel and plugin contracts, and all signing uses WebAuthn, viem and the ZeroDev SDK.
 
@@ -125,14 +125,15 @@ sequenceDiagram
   SQ-->>OLD: notification "someone is recovering your Vault"
   Note over SQ: waiting period starts (48 h prod, 30 s demo)
   C->>A: enter backup key
-  A->>K: read recovery keys: is this key one of them? (refused if not)
+  A->>A: is this the Vault's registered backup key? (refused if not)
+  A->>K: read recovery setup (installed, keys, weights)
   A->>A: backup key approves the recovery operation
   alt client cancels from old device
     OLD->>SQ: cancel, signed by the current passkey
     SQ-->>A: recovery cancelled, nothing happens
   else delay passes without objection
     A->>SQ: request co-signature + backup approval
-    SQ->>K: read recovery keys; verify approval comes from the backup key
+    SQ->>K: read recovery setup; verify approval comes from the backup key
     SQ->>A: guardian approval
     A->>K: user operation [backup approval, guardian approval, final sig] → doRecovery
     K->>K: passkey validator now holds the NEW public key
@@ -150,11 +151,12 @@ sequenceDiagram
   participant K as Smart account
   Note over A: Swissquote unreachable
   C->>A: paste backup kit (Vault address + backup key)
-  A->>K: read recovery keys: backup key + partner present?
+  A->>P: registered recovery addresses; is this the backup key?
+  A->>K: read recovery setup: partner installed?
   A->>C: Face ID - create NEW passkey
   A->>A: backup key approves doRecovery
   A->>P: request: identity + backup approval
-  P->>K: verify approval against the recovery keys (60 + 40 = 100)
+  P->>K: read recovery setup; verify approval from the backup key (60 + 40 = 100)
   Note over P: waiting period (30 days prod, 45 s demo); passkey can veto
   P->>A: partner approval
   A->>K: user operation [backup approval, partner approval] → doRecovery
@@ -188,7 +190,7 @@ sequenceDiagram
 | Wallet ownership proof | Security tab | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |
 | Recovery veto | Old device | Signed by the current passkey (ERC-1271); fallback: authenticated session |
 | Gas sponsorship | Every operation | Real paymaster; production policy above |
-| Recovery approvals | Both guardians | Backup approval verified against the on-chain recovery keys before co-signing |
+| Recovery approvals | Both guardians | Backup approval verified (registered backup key, on-chain recovery setup) before co-signing |
 
 ## Known limitations (honest list)
 

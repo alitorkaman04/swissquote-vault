@@ -12,7 +12,7 @@
 | T1 | **Nothing; client loses phone** | – | Recovery: new passkey + backup key + Swissquote identity + delay. Same address, same funds | Client must keep the backup kit (or a second passkey) |
 | T2 | **Stolen locked phone** | Send funds | Every signature needs Face ID / Touch ID; the passkey can't be exported from the secure enclave | None while the phone stays locked. Client recovers to rotate the passkey |
 | T3 | **Stolen unlocked phone / coerced biometrics** | Drain the Vault | Daily limit, high-value step-up with the Swissquote security code (second channel), sanctions screening | Small transfers under the limit until the client recovers. Production: on-chain spending limits (ZeroDev policies) |
-| T4 | **Stolen phone + email inbox** (bonus scenario) | Reset the e-banking password, request a recovery to their own passkey | The backup key is on neither. Any other key is refused: the app checks it against the Vault's on-chain recovery keys, and Swissquote refuses to co-sign without a genuine backup approval (verified against the chain). **Demoed:** Recover → "Demo: try as a thief with the phone + email" | None alone |
+| T4 | **Stolen phone + email inbox** (bonus scenario) | Reset the e-banking password, request a recovery to their own passkey | The backup key is on neither. Any other key is refused: the app checks it against the Vault's registered backup key, Swissquote refuses to co-sign without a genuine approval from that key, and the contract itself would reject any other. **Demoed:** Recover → "Demo: try as a thief with the phone + email" | None alone |
 | T5 | **Phished Swissquote password + 2FA, or SIM swap** | Same as T4 | Same: needs the backup key, which Swissquote never had. Old devices are alerted and can cancel | None alone |
 | T6 | **Stolen backup kit + one guardian's cooperation** (phished bank login, or a fooled partner) | Full recovery takeover | Waiting period (48 h / 30 days); alerts to every device holding the passkey; one-tap passkey-signed cancel; guardian fraud checks | Client unreachable for the whole delay. This is the "two independent compromises" case |
 | T7 | **Rogue Swissquote employee** | Move funds or take over | Guardian key can't sign anything but half of a recovery, and only with a backup approval; HSM with four-eyes access; recovery still triggers alerts + delay | Collusion with a stolen backup kit = T6 |
@@ -32,7 +32,7 @@
 
 The bonus asks for a recovery that refuses an attacker who has stolen the client's phone **and** email. Ours requires **independent factors plus time**, and the decisive one is checked by the blockchain:
 
-1. **What you kept:** the backup key, which only the client has (never on the phone, never emailed, never seen by Swissquote). Checked against the Vault's recovery keys read from the chain; and the contract itself accepts nothing that doesn't reach the threshold.
+1. **What you kept:** the backup key, which only the client has (never on the phone, never emailed, never seen by Swissquote). Checked against the backup key registered at creation; and the contract itself accepts nothing that doesn't reach the threshold.
 2. **Who you are:** Swissquote e-banking identity (KYC'd, 2FA), or the partner's identity check. Each guardian also verifies the backup approval before it co-signs.
 3. **What you still hold:** any device with the current passkey sees the recovery and can cancel it with a passkey-signed veto.
 4. **Time:** a waiting period long enough for the client to notice.
@@ -41,7 +41,7 @@ The bonus asks for a recovery that refuses an attacker who has stolen the client
 | --- | --- |
 | Phone | No (no backup key; can't unlock the passkey) |
 | Email / SIM | No (no backup key) |
-| **Phone + email** | **No: key not among the on-chain recovery keys, and Swissquote refuses (live demo)** |
+| **Phone + email** | **No: not the backup key, and Swissquote refuses (live demo)** |
 | Bank credentials | No (no backup key) |
 | Backup kit | No (no guardian will co-sign without identity) |
 | Swissquote + partner | No (80 < 100, on-chain) |

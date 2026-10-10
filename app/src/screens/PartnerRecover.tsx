@@ -3,7 +3,6 @@ import { type Address, type Hex, isAddress } from "viem"
 import { EXPLORER_TX } from "../lib/config"
 import { partner, type PartnerRecovery } from "../lib/partner"
 import { adoptRecoveredSession, approveWithBackupKey, checkBackupKey, prepareNewPasskey, submitRecovery } from "../lib/recovery"
-import { weightOf } from "../lib/onchainRecovery"
 import type { WalletSession } from "../lib/wallet"
 import { appendActivity } from "../lib/activity"
 import { Alert, Button, Countdown, Field, Icon, errorMessage, formatGas, short, uniquePasskeyName } from "../ui"
@@ -90,11 +89,17 @@ export function PartnerRecover({
       if (!isAddress(vault.trim())) throw new Error("Enter your Vault address (it’s on your backup kit).")
       const walletAddress = vault.trim() as Address
       if (!holder.trim()) throw new Error("Enter your client number for the identity check.")
-      const check = await checkBackupKey(walletAddress, backupKey)
-      if (!check.ok) throw new Error(check.reason)
-      if (weightOf(check.setup, info.address) === 0) {
-        throw new Error("This Vault has no independent partner: it was created before the partner existed. Recover with Swissquote instead.")
+      // The public addresses the client registered with the partner at onboarding.
+      const onFile = await partner.vault(walletAddress).catch(() => null)
+      if (!onFile) {
+        throw new Error("This Vault isn’t registered with the independent partner (it was created before the partner existed). Recover with Swissquote instead.")
       }
+      const check = await checkBackupKey(walletAddress, backupKey, {
+        backup: onFile.backupAddress,
+        swissquote: onFile.swissquoteAddress,
+        partner: info.address,
+      })
+      if (!check.ok) throw new Error(check.reason)
       // New passkey on this device, then the backup key approves exactly this change.
       const newName = uniquePasskeyName(holder.trim())
       const p = await prepareNewPasskey(newName)

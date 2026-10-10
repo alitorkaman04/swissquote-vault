@@ -25,7 +25,7 @@ Sign in as `judgeN` → Create with passkey → "Use a phone, tablet or security
 | Stolen phone? | Needs Face ID for every signature. Thief can't sign. Client recovers to a new phone; old phone is locked out. |
 | Can Swissquote take the money? | No. Its key (40) can only help replace the passkey, only with the client's backup key (60), after a delay the client can cancel. Even Swissquote + partner = 80, not enough. |
 | What if Swissquote goes bankrupt? | The money is in the client's own account. The passkey still works (we can switch Swissquote off live). Lost phone: backup kit + independent partner = 100. |
-| Phone and email stolen? | Refused: they don't have the backup key. The chain rejects their key and Swissquote won't co-sign. We show it live. |
+| Phone and email stolen? | Refused: they don't have the backup key. Their key isn't the backup key: the app refuses, Swissquote won't co-sign, and the on-chain rules would reject it anyway. We show it live. |
 | Travel Rule? | Swissquote ↔ own Vault: verified self-hosted wallet, automatic. Vault → third party: the client sends, Swissquote isn't the sending institution. |
 | Who can cancel a recovery? | A device that still holds the current passkey; the veto is signed by it and verified on-chain. |
 | Lost phone *and* backup? | Then no recovery, like any self-custody wallet. Production adds a second passkey on another device as an alternative backup. |

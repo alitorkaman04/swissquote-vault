@@ -89,12 +89,19 @@ export function Recover({
       setStep(2)
     })
 
+  /** The Vault's public recovery addresses, as registered with Swissquote at creation. */
+  async function knownKeys() {
+    const onFile = await bank.getWallet(bankSession.token)
+    if (!onFile) throw new Error("Swissquote has no Vault on file for you.")
+    return { backup: onFile.backupAddress, swissquote: guardian, partner: onFile.partnerAddress }
+  }
+
   const stepBackup = () =>
     run(async () => {
       if (!prepared) throw new Error("no prepared passkey")
       setAttack(null)
       // Checked against the Vault's recovery keys on-chain before anything is signed.
-      const check = await checkBackupKey(existing.walletAddress, backupKey)
+      const check = await checkBackupKey(existing.walletAddress, backupKey, await knownKeys())
       if (!check.ok) throw new Error(check.reason)
       const res = await approveWithBackupKey(existing.walletAddress, check.setup, check.key, prepared.callData)
       setBackupSig({ ...res, setup: check.setup, backupAddress: check.address })
@@ -109,7 +116,7 @@ export function Recover({
     run(async () => {
       if (!prepared || !request) throw new Error("start the recovery first")
       const attackerKey = generatePrivateKey()
-      const chainCheck = await checkBackupKey(existing.walletAddress, attackerKey)
+      const chainCheck = await checkBackupKey(existing.walletAddress, attackerKey, await knownKeys())
       let bankAnswer: string
       try {
         await bank.signRecovery(request.id, bankSession.token, await attackerApproval(attackerKey, existing.walletAddress, prepared.callData))
@@ -148,7 +155,7 @@ export function Recover({
 
   const steps = [
     { t: "Create a passkey on this phone", d: "Face ID makes the new key" },
-    { t: "Sign with your backup key", d: "Checked on-chain: only your key counts" },
+    { t: "Sign with your backup key", d: "Only your key counts" },
     { t: "Swissquote waits, then co-signs", d: `${RECOVERY_DELAY_SECONDS}s in this demo · 48 h in production` },
     { t: "Passkey replaced on-chain", d: "Same address, same funds" },
   ]
@@ -280,7 +287,7 @@ export function AttackerRefused({ chain, bank: bankAnswer }: { chain: string; ba
         <span className="sub-head">What stops them</span>
         <div className="c">
           <span className="fail"><Icon name="x" size={18} stroke={2.2} /></span>
-          <span>Backup key, checked against the chain<span className="d">{chain}</span></span>
+          <span>Your backup key<span className="d">{chain}</span></span>
         </div>
         {bankAnswer && (
           <div className="c">
