@@ -27,6 +27,7 @@ export const PUBLIC_RPC_URLS = [
   "https://sepolia.base.org",
   "https://base-sepolia-rpc.publicnode.com",
   "https://base-sepolia.drpc.org",
+  "https://base-sepolia.gateway.tenderly.co",
 ]
 
 export const ENTRY_POINT = getEntryPoint("0.7")

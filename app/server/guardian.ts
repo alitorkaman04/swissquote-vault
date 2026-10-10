@@ -45,6 +45,7 @@ export const publicClient = createPublicClient({
     http("https://sepolia.base.org", { retryCount: 2 }),
     http("https://base-sepolia-rpc.publicnode.com", { retryCount: 2 }),
     http("https://base-sepolia.drpc.org", { retryCount: 2 }),
+    http("https://base-sepolia.gateway.tenderly.co", { retryCount: 2 }),
   ]),
 })
 

@@ -98,18 +98,26 @@ export async function readRecoverySetup(
   { strict = false }: { strict?: boolean } = {},
 ): Promise<RecoverySetup | null> {
   let header: { total: number; threshold: number; count: number } | null = null
-  try {
-    const [total, threshold, , count] = await readContract(client, {
-      address: WEIGHTED_VALIDATOR_ADDRESS,
-      abi: WEIGHTED_ABI,
-      functionName: "weightedStorage",
-      args: [wallet],
-    })
-    header = { total: Number(total), threshold: Number(threshold), count: Number(count) }
-  } catch (e) {
+  let lastError: unknown
+  // Public testnet RPCs drop requests now and then: retry a few times before giving up.
+  for (let attempt = 0; attempt < 4 && !header; attempt++) {
+    try {
+      const [total, threshold, , count] = await readContract(client, {
+        address: WEIGHTED_VALIDATOR_ADDRESS,
+        abi: WEIGHTED_ABI,
+        functionName: "weightedStorage",
+        args: [wallet],
+      })
+      header = { total: Number(total), threshold: Number(threshold), count: Number(count) }
+    } catch (e) {
+      lastError = e
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+    }
+  }
+  if (!header) {
+    console.warn("could not read the recovery header from the chain:", (lastError as Error)?.message ?? lastError)
     // Guardians (strict) never co-sign without the on-chain check; the app may fall back for display.
-    if (strict) throw new Error("could not read the Vault's recovery setup from the chain; try again")
-    console.warn("could not read the recovery header; using the registered configuration", e)
+    if (strict) throw new Error("could not read the Vault's recovery setup from the chain (network); press the button again")
   }
   if (header && (header.threshold === 0 || header.count === 0)) return null
   const withPartner = header ? header.count === 3 : Boolean(known.partner)
