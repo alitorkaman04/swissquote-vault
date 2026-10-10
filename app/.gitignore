@@ -6,3 +6,4 @@ server/data.json
 .DS_Store
 server/partner-data.json
 env
+server/*.bak-*

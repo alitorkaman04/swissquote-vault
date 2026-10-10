@@ -12,6 +12,17 @@ import App from "./App"
 
 const root = createRoot(document.getElementById("root")!)
 
+// Dev-only: /?reset makes this browser forget its Vault and Swissquote session (for a fresh demo).
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("reset")) {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith("swissquote-vault")) localStorage.removeItem(k)
+    sessionStorage.clear()
+  } catch {
+    /* storage blocked: nothing to clear */
+  }
+  location.replace("/")
+}
+
 // Dev-only design preview (sample data, no passkey or blockchain): /?preview=home
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("preview")) {
   import("./preview").then(({ Preview }) => root.render(<Preview />))
