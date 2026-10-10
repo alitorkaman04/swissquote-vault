@@ -18,6 +18,14 @@
 | 2:45 | Send 1 USDC from Safari; **Chrome now shows "This device no longer controls your Vault"** | "And the new phone signs. The old phone is locked out." |
 | 2:55 | Close | "Swissquote alone can't move a cent. The client alone can. That's not custody, and it keeps the client one tap from their bank." |
 
+## The closer: "Try it with your own phone"
+
+After the lifecycle, offer the judge the laptop: Chrome → sign out → sign in as `judge1` (any new name, password `demo`, code `000000`) → **Create with passkey** → in the passkey dialog choose **"Use a phone, tablet or security key"** → a QR code appears → the judge scans it with their iPhone and uses **their** Face ID → backup kit → **Activate my Vault** (Face ID on their phone again) → "Your Vault is live on the network".
+
+Say: "That wallet is now controlled by a key inside your phone. Swissquote never saw it, you never saw a seed phrase, and the gas was paid for you. That's the product."
+
+Use a fresh client name for every judge (`judge1`, `judge2`, …).
+
 **Rehearse twice before judging**, including the Safari recovery and the cancel banner.
 
 **Backup plan:** if the network is slow, show the recorded video and the Basescan history of the account.

@@ -12,6 +12,9 @@
 ## Demo order (Chrome = old phone, Safari = new phone)
 Dashboard → Send 5 USDC (checks, Touch ID, Basescan) → `…bad1` blocked → Apps: unknown blocked, Uniswap connect, Revoke → Security: ownership proof → Safari: "I lost my phone", new passkey → **Chrome banner** → (optional: cancel with Touch ID, restart) → backup key → 30 s → Complete → Safari sends 1 USDC → Chrome locked out.
 
+## Closer for judges
+Sign in as `judgeN` → Create with passkey → "Use a phone, tablet or security key" → judge scans QR with their iPhone → Face ID → Activate. "That key is in *your* phone. No seed phrase, no gas, Swissquote never saw it."
+
 ## Numbers
 1.22 m Swissquote accounts · CHF 85.7 m crypto income 2025 · −66 % crypto income H1 2026 · Year 1 contribution ≈ CHF 1.3 m, year 3 ≈ CHF 5.2 m · running cost ≈ CHF 0.3 m/yr · gas < CHF 1 per user per year · 48 h recovery delay in production (30 s demo)
 

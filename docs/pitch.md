@@ -8,7 +8,7 @@ The deck is the "Swissquote Vault" slides artifact (exports to PowerPoint or PDF
 2. **Problem:** "Today a client who wants their own keys withdraws to MetaMask and leaves: no recovery, no checks, and their next trade happens anywhere. Crypto brought Swissquote 85.7 million last year and fell 66% this half-year."
 3. **Three keys:** "The passkey on the phone does everything. The client's backup key and Swissquote's guardian key form a recovery pair that the account only lets do one thing: replace a lost passkey."
 4. **How it works:** "ERC-4337 smart account on Base, passkey validator, recovery validator bound to doRecovery, Swissquote's paymaster pays gas. Audited ZeroDev modules; only bank-side services are mocked."
-5. **Demo** (see `demo-script.md`).
+5. **Demo** (see `demo-script.md`), ending with the judge creating a Vault with their own iPhone's Face ID.
 6. **Recovery:** "Recovery needs identity, the backup key only the client has, and 48 hours during which every old device can cancel. One stolen factor is never enough."
 7. **Compliance:** "Sanctions screening, simulation, approved dApps, step-up for large amounts, gasless, phishing-proof passkeys."
 8. **Legal:** "Swissquote never holds the key that moves funds and its signature is never needed, so under FINMA practice it's not custody. Ownership verification is built in. The recovery grey zone is the question for FINMA."
