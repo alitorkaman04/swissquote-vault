@@ -10,7 +10,7 @@
 **Blockchain** public ledger (we use **Base**, a cheap Ethereum network) · **Testnet** practice network, fake money · **USDC** a digital dollar · **Wallet** holds the key that moves tokens · **Self-custody** you hold the key · **Seed phrase** 24-word backup we *don't* use · **Passkey** Face ID key in the phone's secure chip · **Smart account** a wallet with rules · **Gas** the network fee · **Paymaster** Swissquote pays the gas
 
 ## Demo order (Chrome = old phone, Safari = new phone)
-Dashboard → Send 5 USDC (checks, Touch ID, Basescan) → `…bad1` blocked → Apps: unknown blocked, Uniswap connect, Revoke → Security: ownership proof → Safari: "I lost my phone", new passkey → **Chrome banner** → (optional: cancel with Touch ID, restart) → **"Demo: try as a thief" → refused** → backup key → 30 s → Complete → Safari sends 1 USDC → Chrome locked out.
+Dashboard → Send 5 USDC (checks, Touch ID, Basescan) → `…bad1` blocked → Apps: unknown blocked, Uniswap connect, Revoke → Security: ownership proof → **Move to Swissquote** (credited + record) → Safari: "I lost my phone", new passkey → **Chrome banner** → (optional: cancel with Touch ID, restart) → **"Demo: try as a thief" → refused** → backup key → 30 s → Complete → Safari sends 1 USDC → Chrome locked out.
 
 ## Closer for judges
 Sign in as `judgeN` → Create with passkey → "Use a phone, tablet or security key" → judge scans QR with their iPhone → Face ID → Activate. "That key is in *your* phone. No seed phrase, no gas, Swissquote never saw it."
@@ -26,7 +26,7 @@ Sign in as `judgeN` → Create with passkey → "Use a phone, tablet or security
 | Can Swissquote take the money? | No. Its key (40) can only help replace the passkey, only with the client's backup key (60), after a delay the client can cancel. Even Swissquote + partner = 80, not enough. |
 | What if Swissquote goes bankrupt? | The money is in the client's own account. The passkey still works (we can switch Swissquote off live). Lost phone: backup kit + independent partner = 100. |
 | Phone and email stolen? | Refused: they don't have the backup key. Their key isn't the backup key: the app refuses, Swissquote won't co-sign, and the on-chain rules would reject it anyway. We show it live. |
-| Travel Rule? | Swissquote ↔ own Vault: verified self-hosted wallet, automatic. Vault → third party: the client sends, Swissquote isn't the sending institution. |
+| Travel Rule? | Swissquote ↔ own Vault: verified self-hosted wallet, automatic (show **Move to Swissquote**: credited + Travel Rule record; other wallets held). Vault → third party: the client sends, Swissquote isn't the sending institution. |
 | Who can cancel a recovery? | A device that still holds the current passkey; the veto is signed by it and verified on-chain. |
 | Lost phone *and* backup? | Then no recovery, like any self-custody wallet. Production adds a second passkey on another device as an alternative backup. |
 | Bank login + stolen backup kit? | 48 h window, every client device alerted, one-tap cancel, bank fraud checks. Two independent compromises *and* an unreachable client. |

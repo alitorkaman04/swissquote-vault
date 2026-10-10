@@ -33,6 +33,10 @@ backup key, which the on-chain recovery rules require, and Swissquote refuses to
 | --- | --- | --- |
 | ![Recover](docs/screenshots/recover.png) | ![Recovery alert](docs/screenshots/banner.png) | ![Security](docs/screenshots/security.png) |
 
+| Move to Swissquote: automatic Travel Rule check | Credited, with the Travel Rule record |
+| --- | --- |
+| ![Move to Swissquote](docs/screenshots/move-to-swissquote.png) | ![Travel Rule record](docs/screenshots/travel-rule-record.png) |
+
 | Thief with phone + email: refused | Swissquote switched off: Vault still works | Recover without Swissquote |
 | --- | --- | --- |
 | ![Attacker refused](docs/screenshots/attacker.png) | ![Swissquote unreachable](docs/screenshots/swissquote-down.png) | ![Partner recovery](docs/screenshots/partner-recover.png) |
@@ -56,7 +60,7 @@ backup key, which the on-chain recovery rules require, and Swissquote refuses to
 | --- | --- |
 | **Technical implementation (35)** — create → authenticate → sign → lose → recover, real transaction on a blockchain | Live demo on Base Sepolia (steps in `app/README.md`); code in `app/src/lib/wallet.ts`, `app/src/lib/recovery.ts`; unit tests + CI (`app/tests`, `.github/workflows/ci.yml`) |
 | **Security & custody design (20)** — custody model, threat model, architecture, where keys live, authentication before signing | `docs/custody-model.md`, `docs/threat-model.md` (18 scenarios), `docs/architecture.md`, `docs/security-review.md`; in-app: Security tab, recovery alert + passkey-signed veto, old device locked out |
-| **Legal feasibility (15)** — Swiss custody rules, wallet ownership verification | `docs/legal-swiss.md` (FINMA sources); in-app: one-tap ownership proof verified on-chain (Security tab) |
+| **Legal feasibility (15)** — Swiss custody rules, wallet ownership verification | `docs/legal-swiss.md` (FINMA sources); in-app: one-tap ownership proof verified on-chain, and **Move to Swissquote** with the automatic Travel Rule check (credited only from the client's proven Vault) |
 | **Business case (15)** | `docs/business-case.md` (Swissquote's 2025 / H1 2026 figures, labelled assumptions), `docs/roadmap.md` |
 | **UX & pitch (15)** | Phone-shaped app, plain-language copy, no seed phrase, every mocked step labelled; slide deck presented live |
 | **Bonus: gasless** | Every operation sponsored by the paymaster; client never holds ETH (Send tab: "Paid by Swissquote"). Who pays and abuse prevention: `docs/architecture.md` |

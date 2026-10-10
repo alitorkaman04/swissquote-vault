@@ -2,7 +2,7 @@
  * DEV-ONLY design preview. Renders each screen with sample data so the UI can be reviewed
  * without a passkey, the bank service or the blockchain. Not included in production builds.
  *   /?preview=login | create | welcome | kit | home | banner | review | receive | apps | connect | security | recover
- *             | attacker | down | offline | partner | replaced
+ *             | attacker | down | offline | partner | move | moved | replaced
  */
 import type { ReactNode } from "react"
 import type { Address } from "viem"
@@ -11,6 +11,7 @@ import { BackupKit } from "./screens/BackupKit"
 import { Dashboard } from "./screens/Dashboard"
 import { AttackerRefused, Recover } from "./screens/Recover"
 import { PartnerRecover } from "./screens/PartnerRecover"
+import { MoveToSwissquote } from "./screens/MoveToSwissquote"
 import { Icon } from "./ui"
 import type { Wallet } from "./lib/wallet"
 import { activityKey } from "./lib/activity"
@@ -21,6 +22,13 @@ const BACKUP = "0x5F1e9cF0b5e2C4a1d3B7a9E6c8D0f2A4b6C8e0D2" as Address
 const PARTNER = "0x3B6f0d1E2a9C4b8D7e5F1a2B3c4D5e6F7a8B9c0D" as Address
 const UNISWAP = "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"
 const view = new URLSearchParams(location.search).get("preview") || "home"
+const SQ_ACCOUNT = {
+  balanceUsdc: "2450.00",
+  depositAddress: "0x5aA3c9e1D2b4F6a8C0e2D4f6A8b0C2d4E6f8a0B1",
+  walletAddress: "0xCbF1aac42FB105bc57be2b0b21E5dba1cE6B33b6",
+  ownershipVerifiedAt: Date.now() - 3 * 60_000,
+  deposits: [],
+}
 
 // ---------------------------------------------------------------- fake network
 const pad = (hex: string) => "0x" + hex.replace(/^0x/, "").padStart(64, "0")
@@ -36,6 +44,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (url.includes("localhost:8787")) {
     const path = new URL(url).pathname
     if (path === "/guardian") return json({ address: GUARDIAN })
+    if (path === "/account") return json(SQ_ACCOUNT)
     if (path === "/wallet") return json({ walletAddress: ADDRESS, backupAddress: BACKUP, passkeyName: "demo-1010-120733", recoveredAt: null })
     if (path === "/recovery/pending")
       return json(view === "banner" ? { id: "r1", createdAt: Date.now() - 20000, unlockAt: Date.now() + 10000, status: "pending" } : null)
@@ -149,6 +158,42 @@ export function Preview() {
     ),
     down: <SwissquoteDown hasLocalVault onOpen={async () => {}} onPartnerRecover={noop} onRetry={noop} />,
     partner: <PartnerRecover knownAddress={ADDRESS} onRecovered={async () => {}} onBack={noop} />,
+    move: (
+      <div className="screen">
+        <MoveToSwissquote wallet={wallet} bankSession={bankSession} vaultBalance="17" onMoved={noop} preview={{ account: SQ_ACCOUNT as never }} />
+      </div>
+    ),
+    moved: (
+      <div className="screen">
+        <MoveToSwissquote
+          wallet={wallet}
+          bankSession={bankSession}
+          vaultBalance="12"
+          onMoved={noop}
+          preview={{
+            account: { ...SQ_ACCOUNT, balanceUsdc: "2455.00" } as never,
+            result: {
+              txHash: "0x9c1e",
+              from: ADDRESS,
+              amountUsdc: "5",
+              status: "credited",
+              reason: "Sent from the client's own Vault, created in the KYC'd session and proven with a passkey signature verified on-chain.",
+              at: Date.now(),
+              travelRule: {
+                originator: "Demo (client demo)",
+                originatorWallet: ADDRESS,
+                walletType: "Self-hosted wallet (Swissquote Vault)",
+                ownership: "Verified on-chain (ERC-1271 passkey signature)",
+                beneficiary: "Demo (client demo), Swissquote account",
+                beneficiaryInstitution: "Swissquote Bank (mock)",
+                amount: "5 USDC",
+                txHash: "0x9c1e",
+              },
+            },
+          }}
+        />
+      </div>
+    ),
     offline: <Dashboard wallet={wallet} bankSession={bankSession} offline onLostDevice={noop} />,
   }
   return <Shell>{screens[view] ?? <Dashboard wallet={wallet} bankSession={bankSession} onLostDevice={noop} />}</Shell>

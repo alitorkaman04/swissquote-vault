@@ -1342,3 +1342,49 @@ input[type="number"] {
 .demo-note svg {
   flex-shrink: 0;
 }
+
+/* ------------------------------------------------------------------ Swissquote account */
+.protect.sq {
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.protect.sq.active {
+  border-color: var(--ink);
+}
+.protect.sq .go {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+  color: var(--signal);
+  white-space: nowrap;
+}
+.sq-account {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.sq-account .amt {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.sq-account .amt small {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-left: 6px;
+}
+.protect .stack {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.tr-record .item .right {
+  text-align: right;
+  overflow-wrap: anywhere;
+}

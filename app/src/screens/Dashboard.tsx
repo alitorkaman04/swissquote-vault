@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { type Address, encodeFunctionData, erc20Abi, isAddress, parseUnits } from "viem"
 import { Unreachable, bank, type ApprovedDapp, type BankSession, type ScreeningResult } from "../lib/bank"
 import { partner } from "../lib/partner"
+import { MoveToSwissquote } from "./MoveToSwissquote"
 import { EXPLORER_ADDRESS, EXPLORER_TX, HIGH_VALUE_THRESHOLD_USDC, USDC_ADDRESS, USDC_DECIMALS } from "../lib/config"
 import { getBalances, getUsdcAllowance, isDeployed, publicClient, revokeUsdcAllowance, sendCalls, sendUsdc, signMessageWithPasskey, type Wallet } from "../lib/wallet"
 import QRCode from "qrcode"
@@ -22,7 +23,7 @@ import {
 
 import { appendActivity, readActivity, type Activity } from "../lib/activity"
 
-type Tab = "send" | "receive" | "dapps" | "security"
+type Tab = "send" | "receive" | "dapps" | "security" | "move"
 
 /** A recovery in progress against this Vault, at Swissquote or at the independent partner. */
 type PendingRecovery = { id: string; createdAt: number; via: "swissquote" | "partner" }
@@ -55,6 +56,14 @@ export function Dashboard({
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecovery | null>(null)
   const [copied, setCopied] = useState(false)
   const [replaced, setReplaced] = useState(false)
+  const [sqBalance, setSqBalance] = useState<string | null>(null)
+  const loadAccount = useCallback(() => {
+    if (offline) return
+    bank.account(bankSession.token).then((a) => setSqBalance(a.balanceUsdc)).catch(() => {})
+  }, [bankSession.token, offline])
+  useEffect(() => {
+    loadAccount()
+  }, [loadAccount])
   const [, setTick] = useState(0)
 
   const refresh = useCallback(async () => {
@@ -268,6 +277,31 @@ export function Dashboard({
         </span>
       </button>
 
+      {!offline && (
+        <button className={`protect sq${tab === "move" ? " active" : ""}`} onClick={() => setTab("move")}>
+          <Icon name="bank" size={20} />
+          <span className="stack">
+            <b>Swissquote account</b>
+            <span>{sqBalance ? `${formatAmount(sqBalance)} USDC` : "—"}</span>
+          </span>
+          <span className="go">
+            Move from Vault <Icon name="chevron" size={14} />
+          </span>
+        </button>
+      )}
+
+      {tab === "move" && !offline && (
+        <MoveToSwissquote
+          wallet={wallet}
+          bankSession={bankSession}
+          vaultBalance={balances?.usdc}
+          onMoved={(a) => {
+            addActivity(a)
+            refresh()
+            loadAccount()
+          }}
+        />
+      )}
       {tab === "send" && (
         <Send wallet={wallet} bankSession={bankSession} offline={offline} onSent={(a) => { addActivity(a); refresh() }} balance={balances?.usdc} />
       )}
@@ -333,10 +367,11 @@ function activityIcon(label: string): IconName {
   if (label.startsWith("Recovered")) return "recover"
   if (label.startsWith("Proved")) return "shieldCheck"
   if (label.startsWith("Vault activated")) return "spark"
+  if (label.startsWith("Moved") || label.startsWith("Sent to Swissquote")) return "bank"
   return "check"
 }
 function activityTone(label: string) {
-  if (label.startsWith("Proved") || label.startsWith("Vault activated") || label.startsWith("Recovered")) return "ok"
+  if (label.startsWith("Proved") || label.startsWith("Vault activated") || label.startsWith("Recovered") || label.startsWith("Moved")) return "ok"
   return ""
 }
 

@@ -98,6 +98,20 @@ export const bank = {
   completeRecovery: (id: string, txHash: string) =>
     api<{ ok: true }>(`/recovery/${id}/complete`, { method: "POST", body: JSON.stringify({ txHash }) }),
 
+  /** The client's Swissquote account (mock ledger) and the bank's USDC deposit address. */
+  account: (token: string) => api<SwissquoteAccount>(`/account?token=${encodeURIComponent(token)}`),
+
+  /** Swissquote reads the deposit on-chain and applies the Travel Rule check (credit or hold). */
+  claimDeposit: (token: string, txHash: string) =>
+    api<Deposit & { balanceUsdc: string }>("/deposits/claim", { method: "POST", body: JSON.stringify({ token, txHash }) }),
+
+  /** Demo: how a deposit from another wallet would be treated (simulated sender). */
+  checkSender: (token: string, from: Address) =>
+    api<{ status: "credited" | "held"; reason: string; nextStep?: string }>("/deposits/check-sender", {
+      method: "POST",
+      body: JSON.stringify({ token, from }),
+    }),
+
   /** Compliance checks before a transfer (sanctions screening, limits). */
   screen: (body: { from: Address; to: Address; amountUsdc: string }) =>
     api<ScreeningResult>("/compliance/screen", { method: "POST", body: JSON.stringify(body) }),
@@ -132,4 +146,31 @@ export type ApprovedDapp = {
   category: string
   contracts: Address[]
   note: string
+}
+
+export type Deposit = {
+  txHash: string
+  from: Address
+  amountUsdc: string
+  status: "credited" | "held"
+  reason: string
+  at: number
+  travelRule: {
+    originator: string
+    originatorWallet: string
+    walletType: string
+    ownership: string
+    beneficiary: string
+    beneficiaryInstitution: string
+    amount: string
+    txHash: string
+  }
+}
+
+export type SwissquoteAccount = {
+  balanceUsdc: string
+  depositAddress: Address
+  walletAddress: Address | null
+  ownershipVerifiedAt: number | null
+  deposits: Deposit[]
 }

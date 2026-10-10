@@ -21,9 +21,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
-import { type Address, type Hex, isAddress } from "viem"
+import { type Address, type Hex, isAddress, isHash } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { screenTransfer } from "./compliance.js"
+import { decideDeposit, depositsInLogs, travelRuleRecord } from "./deposits.js"
 import { Refused, coSign, hasProjectId, isDoRecovery, isSignedByVault, publicClient, verifyClientApproval } from "./guardian.js"
 
 // ---------------------------------------------------------------- config
@@ -36,10 +37,33 @@ type Data = {
   bankGuardianPrivateKey: Hex
   clients: Record<
     string,
-    { name: string; walletAddress?: Address; backupAddress?: Address; partnerAddress?: Address; passkeyName?: string; recoveredAt?: number }
+    {
+      name: string
+      walletAddress?: Address
+      backupAddress?: Address
+      partnerAddress?: Address
+      passkeyName?: string
+      recoveredAt?: number
+      ownershipVerifiedAt?: number
+      /** Mock Swissquote account balance in USDC (the bank's own ledger, not on-chain). */
+      swissquoteUsdc?: string
+    }
   >
   tokens: Record<string, string> // token -> clientId
   recoveries: Record<string, Recovery>
+  /** Swissquote's USDC deposit address (key kept so test funds aren't lost). */
+  depositPrivateKey?: Hex
+  deposits?: Record<string, Deposit> // txHash -> deposit
+}
+type Deposit = {
+  txHash: Hex
+  clientId: string
+  from: Address
+  amountUsdc: string
+  status: "credited" | "held"
+  reason: string
+  at: number
+  travelRule: ReturnType<typeof travelRuleRecord>
 }
 type Recovery = {
   id: string
@@ -73,10 +97,17 @@ function save(d: Data) {
 }
 const db = load()
 const bankAccount = privateKeyToAccount(db.bankGuardianPrivateKey)
+db.depositPrivateKey ??= generatePrivateKey()
+db.deposits ??= {}
+save(db)
+const depositAddress = privateKeyToAccount(db.depositPrivateKey).address
+const USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const // Circle test USDC on Base Sepolia
+const STARTING_BALANCE_USDC = "2450.00" // mock Swissquote account balance for every new client
 
 console.log(`Swissquote guardian service (MOCK)  http://localhost:${PORT}`)
 console.log(`  guardian address : ${bankAccount.address}`)
 console.log(`  recovery delay   : ${RECOVERY_DELAY_SECONDS}s (production: 48h)`)
+console.log(`  deposit address  : ${depositAddress}`)
 if (!process.env.BANK_GUARDIAN_PRIVATE_KEY)
   console.log("  NOTE: guardian key lives in server/data.json - keep that file (or set BANK_GUARDIAN_PRIVATE_KEY in .env)")
 if (!hasProjectId) console.warn("  WARNING: ZERODEV_PROJECT_ID not set - recovery signing will fail")
@@ -126,6 +157,8 @@ app.post("/wallet", (req, res) => {
     if (c.walletAddress?.toLowerCase() === walletAddress.toLowerCase() && c.backupAddress && c.backupAddress.toLowerCase() !== backupAddress.toLowerCase()) {
       return res.status(409).send("recovery addresses are fixed at creation")
     }
+    // A new Vault must prove its ownership again.
+    if (c.walletAddress?.toLowerCase() !== walletAddress.toLowerCase()) c.ownershipVerifiedAt = undefined
     // Public addresses only: Swissquote never receives the backup KEY.
     Object.assign(db.clients[clientId], { walletAddress, backupAddress, partnerAddress, passkeyName, recoveredAt: undefined })
     save(db)
@@ -199,7 +232,7 @@ app.post("/ownership/verify", async (req, res) => {
     })
     delete challenges[req.body.nonce]
     if (!valid) return res.status(401).json({ verified: false })
-    ;(c as typeof c & { ownershipVerifiedAt?: number }).ownershipVerifiedAt = Date.now()
+    c.ownershipVerifiedAt = Date.now()
     save(db)
     console.log(`[ownership] ${clientId} proved control of ${c.walletAddress} (ERC-1271, verified on-chain)`)
     res.json({ verified: true, walletAddress: c.walletAddress, verifiedAt: Date.now() })
@@ -320,6 +353,97 @@ app.post("/recovery/:id/complete", (req, res) => {
   save(db)
   console.log(`[recovery] ${r.id} completed on-chain - ${r.newPasskeyName} is now the client's passkey`)
   res.json({ ok: true })
+})
+
+// ---------------------------------------------------------------- Swissquote account + deposits (Travel Rule)
+// The client moves USDC from their Vault to Swissquote's deposit address (a real, gasless transfer).
+// Swissquote reads the USDC Transfer from the chain and credits it only if it came from the client's
+// own Vault with proven ownership (FINMA Guidance 02/2019); anything else is held for review.
+// The account ledger itself is mocked.
+const balanceOf = (c: Data["clients"][string]) => c.swissquoteUsdc ?? STARTING_BALANCE_USDC
+const recentDeposits = (clientId: string) =>
+  Object.values(db.deposits!)
+    .filter((d) => d.clientId === clientId)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 5)
+
+app.get("/account", (req, res) => {
+  try {
+    const clientId = auth(String(req.query.token ?? ""))
+    const c = db.clients[clientId]
+    res.json({
+      balanceUsdc: balanceOf(c),
+      depositAddress,
+      walletAddress: c.walletAddress ?? null,
+      ownershipVerifiedAt: c.ownershipVerifiedAt ?? null,
+      deposits: recentDeposits(clientId),
+    })
+  } catch (e: any) {
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+
+async function receiptWithRetry(hash: Hex) {
+  for (let i = 0; i < 6; i++) {
+    try {
+      return await publicClient.getTransactionReceipt({ hash })
+    } catch {
+      await new Promise((r) => setTimeout(r, 1500))
+    }
+  }
+  throw new Error("transaction not found on Base Sepolia yet; try again in a few seconds")
+}
+
+app.post("/deposits/claim", async (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const c = db.clients[clientId]
+    const txHash = req.body?.txHash
+    if (!isHash(txHash)) return res.status(400).send("bad transaction hash")
+    const existing = db.deposits![txHash]
+    if (existing?.status === "credited") return res.json(existing)
+    if (existing && existing.clientId !== clientId) return res.status(409).send("deposit claimed by another client")
+
+    // Read what actually happened on-chain: USDC transfers into Swissquote's deposit address.
+    const receipt = await receiptWithRetry(txHash)
+    const found = depositsInLogs(receipt.logs, USDC, depositAddress)
+    if (!found) return res.status(400).send("this transaction sent no USDC to Swissquote's deposit address")
+    const { from, amountUsdc } = found
+
+    const decision = decideDeposit({ from, client: c })
+    const deposit: Deposit = {
+      txHash,
+      clientId,
+      from,
+      amountUsdc,
+      status: decision.status,
+      reason: decision.status === "held" ? `${decision.reason} ${decision.nextStep}` : decision.reason,
+      at: Date.now(),
+      travelRule: travelRuleRecord({ clientId, clientName: c.name, from, amountUsdc, txHash, ownershipVerifiedAt: c.ownershipVerifiedAt }),
+    }
+    if (decision.status === "credited") {
+      c.swissquoteUsdc = (Number(balanceOf(c)) + Number(amountUsdc)).toFixed(2)
+    }
+    db.deposits![txHash] = deposit
+    save(db)
+    console.log(`[deposit] ${amountUsdc} USDC from ${from}: ${deposit.status.toUpperCase()} (${decision.reason})`)
+    res.json({ ...deposit, balanceUsdc: balanceOf(c) })
+  } catch (e: any) {
+    console.error(e)
+    res.status(e.status ?? 500).send(e.message)
+  }
+})
+
+// Demo: how Swissquote would treat a deposit from a wallet that isn't the client's (simulated sender).
+app.post("/deposits/check-sender", (req, res) => {
+  try {
+    const clientId = auth(req.body?.token)
+    const from = req.body?.from
+    if (!isAddress(from)) return res.status(400).send("bad address")
+    res.json(decideDeposit({ from, client: db.clients[clientId] }))
+  } catch (e: any) {
+    res.status(e.status ?? 500).send(e.message)
+  }
 })
 
 // ---------------------------------------------------------------- compliance (mock lists, real rules)

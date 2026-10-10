@@ -35,7 +35,8 @@ recovery config names those keys). To pin them explicitly, set `BANK_GUARDIAN_PR
 6. **Security → Simulate losing this phone**, then on a *new device* (a private browser window works):
    sign in to Swissquote → "I lost my phone" → new passkey → countdown starts and the **old device sees a cancel banner** → enter backup key → when the delay ends the bank co-signs → passkey replaced on-chain, same address, same funds.
    - **"Demo: try as a thief with the phone + email"** on the backup-key step: a random key is refused (it isn't the Vault's registered backup key) and Swissquote refuses to co-sign.
-7. **Security → Switch Swissquote off** (dev builds): really stops the mock bank. The Vault keeps signing ("Open my Vault without Swissquote"), and a lost phone is recovered with the backup kit + the independent partner. Restart the bank with `npm run bank`.
+7. **Swissquote account → Move from Vault**: prove ownership with Face ID (once), move USDC with Face ID; Swissquote reads the transfer on-chain, checks it came from your proven Vault and credits your (mock) Swissquote account with a Travel Rule record. "Demo: deposit from a wallet that isn't yours" shows a held deposit.
+8. **Security → Switch Swissquote off** (dev builds): really stops the mock bank. The Vault keeps signing ("Open my Vault without Swissquote"), and a lost phone is recovered with the backup kit + the independent partner. Restart the bank with `npm run bank`.
 
 ## How it works
 

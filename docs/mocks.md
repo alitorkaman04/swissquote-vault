@@ -25,6 +25,7 @@ storage, while the client app never holds its share.** Here is how Vault complie
 | Sanctions screening | **Mock** | Fixed blocklist. Production: Chainalysis / Elliptic against OFAC + SECO |
 | Approved dApp list | **Mock** | Static list. Production: maintained by Swissquote Digital Assets with per-client risk profiles |
 | Transaction simulation | **Real** | `eth_call` simulation before every signature |
+| Move to Swissquote: transfer + Travel Rule check | **Real transfer and checks, mock ledger** | The USDC transfer to Swissquote's deposit address is real and gasless; the bank reads it on-chain and applies the check (`server/deposits.ts`). The Swissquote account balance (2,450 USDC to start) is a mock ledger. "Deposit from a wallet that isn't yours" evaluates the rule for a simulated sender |
 | Wallet ownership proof (ERC-1271) | **Real** | The passkey signs a bank challenge; the bank verifies the signature on-chain against the smart account (`verifyMessage`, ERC-6492/1271). Challenge issuance and record-keeping are mocked |
 | Recovery veto signed by the current passkey | **Real signature, mock transport** | The old device signs `Cancel Vault recovery <id>` (ERC-1271), verified on-chain by the guardian service. Fallback for the demo: the client's authenticated session |
 | High-value step-up (2FA before signing) | **Mock** | Code `000000`. Production: Swissquote's existing 2FA |

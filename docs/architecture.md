@@ -187,7 +187,8 @@ sequenceDiagram
 | High-value step-up | Before signing | Above 1,000 USDC the client also enters the Swissquote security code (step-up; mock code 000000) |
 | Transaction simulation | Before signing | Real `eth_call` simulation on Base Sepolia |
 | Approved dApp list | Apps tab | Static list. Unknown dApps are blocked. Allowances read from chain; one-tap revoke |
-| Wallet ownership proof | Security tab | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |
+| Wallet ownership proof | Security tab, Move to Swissquote | Bank challenge → passkey signs (ERC-1271) → bank verifies on-chain |
+| Travel Rule check on deposits | Move to Swissquote | Bank reads the USDC transfer on-chain; credits only from the client's proven Vault, keeps the originator/beneficiary record; other senders held |
 | Recovery veto | Old device | Signed by the current passkey (ERC-1271); fallback: authenticated session |
 | Gas sponsorship | Every operation | Real paymaster; production policy above |
 | Recovery approvals | Both guardians | Backup approval verified (registered backup key, on-chain recovery setup) before co-signing |

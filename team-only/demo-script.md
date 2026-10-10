@@ -10,6 +10,7 @@
 | 1:00 | Recipient `0x…bad1` → Review | "Sanctioned address: blocked before I can sign." |
 | 1:10 | Apps tab → unknown URL → blocked; Uniswap → Connect → **Revoke** | "Only Swissquote-approved dApps, with limited approvals I can revoke." |
 | 1:20 | Security tab → Sign ownership proof | "Swiss rules say the bank must verify this wallet is mine. One tap: the bank challenges, my passkey signs, the bank checks it on-chain." |
+| 1:22 | **Swissquote account → Move from Vault** → 2 USDC → Move with Face ID → "Credited" + Travel Rule record | "And back to the bank in one tap. Swissquote reads the transfer on-chain, sees it came from my own verified Vault, and credits it automatically: that's the Travel Rule check FINMA requires, done by construction." |
 | 1:25 | Safari ("new phone"): sign in → "I lost my phone" → create passkey | "I lost my phone. On a new one I sign in to Swissquote: that proves who I am." |
 | 1:45 | **Switch to Chrome:** yellow banner "Someone is recovering this Vault" | "Meanwhile every device I still have gets this. If it's a thief with my bank password, one tap cancels it." |
 | *optional* | Click cancel → Touch ID → green "veto signed with this phone's passkey"; Safari shows "Recovery cancelled". Then restart the recovery in Safari | "The veto is signed by my passkey and verified on-chain: a thief can't fake it. Now let's say it really is me." |
