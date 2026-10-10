@@ -73,10 +73,36 @@ export function short(addr: string, n = 6) {
   return addr ? `${addr.slice(0, n + 2)}…${addr.slice(-4)}` : ""
 }
 
+/**
+ * Turn an error into one readable line, keeping the parts that say WHICH service failed and WHY.
+ * viem errors carry `shortMessage`, `details`, `status` and `url` (on the error or its causes).
+ */
 export function errorMessage(e: unknown) {
-  if (e instanceof Error) {
-    // viem errors are very long; keep the first line
-    return e.message.split("\n")[0]
+  console.error(e)
+  if (!(e instanceof Error)) return String(e)
+  const parts: string[] = []
+  let cur: unknown = e
+  const seen = new Set<string>()
+  for (let i = 0; cur && i < 6; i++) {
+    const err = cur as { shortMessage?: string; message?: string; details?: string; status?: number; url?: string; cause?: unknown }
+    const msg = err.shortMessage ?? err.message?.split("\n")[0]
+    if (msg && !seen.has(msg)) {
+      seen.add(msg)
+      parts.push(msg)
+    }
+    if (err.status) parts.push(`status ${err.status}`)
+    if (err.url) {
+      try {
+        parts.push(`at ${new URL(err.url).host}`)
+      } catch {
+        /* ignore */
+      }
+    }
+    if (err.details && !seen.has(err.details)) {
+      seen.add(err.details)
+      parts.push(err.details)
+    }
+    cur = err.cause
   }
-  return String(e)
+  return [...new Set(parts)].join(" · ").slice(0, 400)
 }

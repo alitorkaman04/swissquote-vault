@@ -19,6 +19,16 @@ if (!PROJECT_ID) {
 export const ZERODEV_RPC_URL = `https://rpc.zerodev.app/api/v3/${PROJECT_ID}/chain/${CHAIN.id}`
 export const PASSKEY_SERVER_URL = `https://passkeys.zerodev.app/api/v3/${PROJECT_ID}`
 
+/**
+ * Public Base Sepolia nodes for reading the chain (balances, simulation).
+ * Free public nodes rate-limit, so we try several in order.
+ */
+export const PUBLIC_RPC_URLS = [
+  "https://sepolia.base.org",
+  "https://base-sepolia-rpc.publicnode.com",
+  "https://base-sepolia.drpc.org",
+]
+
 export const ENTRY_POINT = getEntryPoint("0.7")
 export const KERNEL_VERSION = KERNEL_V3_1
 

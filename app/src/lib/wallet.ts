@@ -40,6 +40,7 @@ import {
   createPublicClient,
   encodeFunctionData,
   erc20Abi,
+  fallback,
   formatEther,
   formatUnits,
   http,
@@ -52,12 +53,16 @@ import {
   ENTRY_POINT,
   KERNEL_VERSION,
   PASSKEY_SERVER_URL,
+  PUBLIC_RPC_URLS,
   USDC_ADDRESS,
   USDC_DECIMALS,
   ZERODEV_RPC_URL,
 } from "./config"
 
-export const publicClient = createPublicClient({ chain: CHAIN, transport: http() })
+export const publicClient = createPublicClient({
+  chain: CHAIN,
+  transport: fallback(PUBLIC_RPC_URLS.map((url) => http(url, { retryCount: 2 }))),
+})
 
 export const PASSKEY_VALIDATOR_VERSION = PasskeyValidatorContractVersion.V0_0_3_PATCHED
 export const WEIGHTED_VALIDATOR_VERSION = WeightedValidatorContractVersion.V0_0_2_PATCHED
