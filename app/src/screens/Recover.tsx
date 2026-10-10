@@ -86,6 +86,7 @@ export function Recover({
       const { txHash } = await submitRecovery(backupSig.client, prepared.callData, [backupSig.signature, bankSignature])
       setTxHash(txHash)
       setStep(4)
+      await bank.completeRecovery(request.id, txHash).catch(() => {})
       const session = adoptRecoveredSession(
         { address: existing.walletAddress, backupAddress: existing.backupAddress, bankGuardianAddress: guardian },
         newName.trim(),

@@ -36,7 +36,7 @@ export const bank = {
 
   /** The wallet the bank has on file for this client (needed on a new device). */
   getWallet: (token: string) =>
-    api<{ walletAddress: Address; backupAddress: Address; passkeyName: string } | null>(
+    api<{ walletAddress: Address; backupAddress: Address; passkeyName: string; recoveredAt: number | null } | null>(
       `/wallet?token=${encodeURIComponent(token)}`,
     ),
 
@@ -55,6 +55,10 @@ export const bank = {
 
   /** After the delay, the bank co-signs the recovery user operation. */
   signRecovery: (id: string) => api<{ signature: Hex }>(`/recovery/${id}/sign`, { method: "POST" }),
+
+  /** New device reports the on-chain recovery; the new passkey becomes the one on file. */
+  completeRecovery: (id: string, txHash: string) =>
+    api<{ ok: true }>(`/recovery/${id}/complete`, { method: "POST", body: JSON.stringify({ txHash }) }),
 
   /** Compliance checks before a transfer (sanctions screening, limits). */
   screen: (body: { from: Address; to: Address; amountUsdc: string }) =>

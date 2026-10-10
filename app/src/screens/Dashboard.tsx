@@ -22,6 +22,7 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
   })
   const [pendingRecovery, setPendingRecovery] = useState<RecoveryRequest | null>(null)
   const [copied, setCopied] = useState(false)
+  const [replaced, setReplaced] = useState(false)
 
   const refresh = useCallback(async () => {
     const [b, d] = await Promise.all([getBalances(address), isDeployed(address)])
@@ -35,13 +36,23 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
     return () => clearInterval(t)
   }, [refresh])
 
-  // The OLD device watches for recovery attempts so the legitimate owner can veto one.
+  // The OLD device watches for recovery attempts so the legitimate owner can veto one,
+  // and notices when a completed recovery has replaced its passkey.
   useEffect(() => {
-    const poll = () => bank.pendingForWallet(address).then(setPendingRecovery).catch(() => {})
+    const poll = () => {
+      bank.pendingForWallet(address).then(setPendingRecovery).catch(() => {})
+      bank
+        .getWallet(bankSession.token)
+        .then((onFile) => {
+          // Only after a recovery completed: the passkey on file is newer than this device's.
+          if (onFile?.recoveredAt && onFile.passkeyName !== wallet.session.passkeyName) setReplaced(true)
+        })
+        .catch(() => {})
+    }
     poll()
     const t = setInterval(poll, 4000)
     return () => clearInterval(t)
-  }, [address])
+  }, [address, bankSession.token, wallet.session.passkeyName])
 
   function addActivity(a: Activity) {
     setActivity((prev) => {
@@ -49,6 +60,34 @@ export function Dashboard({ wallet, bankSession, onLostDevice }: { wallet: Walle
       localStorage.setItem(ACTIVITY_KEY, JSON.stringify(next))
       return next
     })
+  }
+
+  if (replaced) {
+    return (
+      <div className="screen">
+        <Alert kind="bad">
+          <b>This device no longer controls your Vault.</b>
+          <span>
+            Its passkey was replaced by a recovery from another device. Your funds are safe at the same address, under the
+            new passkey. If you didn’t do this, contact Swissquote immediately.
+          </span>
+        </Alert>
+        <div className="card flat">
+          <span className="muted">Vault</span>
+          <span className="mono">{address}</span>
+        </div>
+        <Button
+          variant="ghost"
+          block
+          onClick={() => {
+            localStorage.removeItem("swissquote-vault:session")
+            onLostDevice()
+          }}
+        >
+          Set up this device again
+        </Button>
+      </div>
+    )
   }
 
   return (

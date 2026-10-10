@@ -44,7 +44,7 @@ const KERNEL_VERSION = KERNEL_V3_1
 
 type Data = {
   bankGuardianPrivateKey: Hex
-  clients: Record<string, { name: string; walletAddress?: Address; backupAddress?: Address; passkeyName?: string }>
+  clients: Record<string, { name: string; walletAddress?: Address; backupAddress?: Address; passkeyName?: string; recoveredAt?: number }>
   tokens: Record<string, string> // token -> clientId
   recoveries: Record<string, Recovery>
 }
@@ -135,7 +135,7 @@ app.get("/wallet", (req, res) => {
     const clientId = auth(String(req.query.token ?? ""))
     const c = db.clients[clientId]
     if (!c.walletAddress) return res.json(null)
-    res.json({ walletAddress: c.walletAddress, backupAddress: c.backupAddress, passkeyName: c.passkeyName })
+    res.json({ walletAddress: c.walletAddress, backupAddress: c.backupAddress, passkeyName: c.passkeyName, recoveredAt: c.recoveredAt ?? null })
   } catch (e: any) {
     res.status(e.status ?? 500).send(e.message)
   }
@@ -205,9 +205,6 @@ app.post("/recovery/:id/sign", async (req, res) => {
     const signature = await bankApprove(r.walletAddress, c.backupAddress!, r.callData)
     r.bankSignature = signature
     r.status = "signed"
-    // The client's new passkey becomes the one on file, so "Unlock with passkey" on
-    // another device looks for the new passkey, not the replaced one.
-    c.passkeyName = r.newPasskeyName
     save(db)
     console.log(`[recovery] ${r.id} co-signed by Swissquote guardian`)
     res.json({ signature })
@@ -215,6 +212,22 @@ app.post("/recovery/:id/sign", async (req, res) => {
     console.error(e)
     res.status(500).send(e.message)
   }
+})
+
+// Called by the new device once the recovery user operation is confirmed on-chain.
+// The new passkey becomes the one on file; old devices see they were replaced.
+app.post("/recovery/:id/complete", (req, res) => {
+  const r = db.recoveries[req.params.id]
+  if (!r) return res.status(404).send("unknown recovery")
+  if (r.status !== "signed") return res.status(409).send("recovery not signed")
+  const c = db.clients[r.clientId]
+  c.passkeyName = r.newPasskeyName
+  c.recoveredAt = Date.now()
+  ;(r as Recovery & { txHash?: string; completedAt?: number }).txHash = req.body?.txHash
+  ;(r as Recovery & { completedAt?: number }).completedAt = Date.now()
+  save(db)
+  console.log(`[recovery] ${r.id} completed on-chain - ${r.newPasskeyName} is now the client's passkey`)
+  res.json({ ok: true })
 })
 
 /** The bank's one real cryptographic act: approve the recovery user operation with its key share. */
