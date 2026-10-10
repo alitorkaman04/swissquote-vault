@@ -1,5 +1,7 @@
 # Swissquote Vault
 
+[![CI](https://github.com/alitorkaman04/swissquote-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/alitorkaman04/swissquote-vault/actions/workflows/ci.yml)
+
 A self-custody crypto wallet that Swissquote could realistically launch for its clients:
 **their keys, their control — one step away from their Swissquote account.**
 
@@ -25,6 +27,21 @@ with a one-tap cancel on the old device.
 | Backup kit, shown once | Gasless USDC sent | Connect a dApp (limited approval) | Old phone after recovery |
 | --- | --- | --- | --- |
 | ![Backup kit](docs/screenshots/backup-kit.png) | ![Dashboard](docs/screenshots/dashboard.png) | ![Uniswap](docs/screenshots/uniswap.png) | ![Replaced](docs/screenshots/replaced.png) |
+
+## For judges: where each criterion is answered
+
+| Criterion | Evidence |
+| --- | --- |
+| **Technical implementation (35)** — create → authenticate → sign → lose → recover, real transaction on a blockchain | Live demo on Base Sepolia (`docs/demo-script.md`); code in `app/src/lib/wallet.ts`, `app/src/lib/recovery.ts`; unit tests + CI (`app/tests`, `.github/workflows/ci.yml`) |
+| **Security & custody design (20)** — custody model, threat model, architecture, where keys live, authentication before signing | `docs/custody-model.md`, `docs/threat-model.md` (16 scenarios), `docs/architecture.md`; in-app: Security tab, recovery alert + passkey-signed veto, old device locked out |
+| **Legal feasibility (15)** — Swiss custody rules, wallet ownership verification | `docs/legal-swiss.md` (FINMA sources); in-app: one-tap ownership proof verified on-chain (Security tab) |
+| **Business case (15)** | `docs/business-case.md` (Swissquote's 2025 / H1 2026 figures, labelled assumptions), `docs/roadmap.md` |
+| **UX & pitch (15)** | Phone-shaped app, plain-language copy, no seed phrase; deck + script in `docs/pitch.md` |
+| **Bonus: gasless** | Every operation sponsored by the paymaster; client never holds ETH (Send tab: "Paid by Swissquote") |
+| **Bonus: compliant dApp interaction** | Approved-dApp list, unknown sites blocked, limited approvals with on-chain allowance + revoke, sanctions screening, simulation, 2FA step-up above 1,000 USDC |
+| **Bonus: recovery that tells client from attacker** | Identity + backup key + waiting period + passkey-signed veto (`docs/threat-model.md`, "How recovery tells the client from an attacker") |
+| **Bonus: Swiss regulatory considerations** | `docs/legal-swiss.md`, ownership proof in-app |
+| **What is mocked** (required disclosure) | `docs/mocks.md` |
 
 ## Repo layout
 

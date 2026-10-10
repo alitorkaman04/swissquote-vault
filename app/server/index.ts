@@ -30,6 +30,7 @@ import {
 import { type Address, type Hex, createPublicClient, decodeFunctionData, fallback, http, isAddress, parseAbi } from "viem"
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts"
 import { baseSepolia } from "viem/chains"
+import { screenTransfer } from "./compliance.js"
 
 // ---------------------------------------------------------------- config
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -362,62 +363,11 @@ async function bankApprove(walletAddress: Address, backupAddress: Address, callD
   })
 }
 
-// ---------------------------------------------------------------- compliance (mock)
-// Production: Chainalysis / Elliptic API against OFAC + SECO lists. Demo: a fixed blocklist.
-const SANCTIONED: Address[] = [
-  "0x000000000000000000000000000000000000bad1", // demo "sanctioned" counterparty - use it in the pitch
-]
-const DAILY_LIMIT_USDC = 25_000
-const HIGH_VALUE_USDC = Number(process.env.VITE_HIGH_VALUE_THRESHOLD_USDC ?? 1000)
-
+// ---------------------------------------------------------------- compliance (mock lists, real rules)
+// Rules live in server/compliance.ts (unit-tested). Production swaps the lists for a screening provider.
 app.post("/compliance/screen", (req, res) => {
   const { from, to, amountUsdc } = req.body ?? {}
-  const amount = Number(amountUsdc ?? 0)
-  const checks = [
-    {
-      name: "Sanctions screening (OFAC / SECO lists)",
-      passed: !SANCTIONED.map((a) => a.toLowerCase()).includes(String(to).toLowerCase()),
-      detail: "Counterparty address checked against sanctions lists",
-    },
-    {
-      name: "Address format",
-      passed: isAddress(String(to)) && String(to).toLowerCase() !== String(from).toLowerCase(),
-      detail: "Valid address, not self-transfer",
-    },
-    {
-      name: `Daily limit (${DAILY_LIMIT_USDC.toLocaleString()} USDC)`,
-      passed: amount <= DAILY_LIMIT_USDC,
-      detail: "Cumulative 24h outgoing volume",
-    },
-    {
-      name: `High-value check (> ${HIGH_VALUE_USDC.toLocaleString()} USDC)`,
-      passed: amount <= HIGH_VALUE_USDC,
-      detail: amount > HIGH_VALUE_USDC ? "Requires e-banking confirmation (step-up authentication)" : "Below threshold",
-    },
-  ]
-  const sanctions = checks[0].passed
-  const format = checks[1].passed
-  const limit = checks[2].passed
-  const highValue = checks[3].passed
-  let decision: "allow" | "review" | "block" = "allow"
-  const reasons: string[] = []
-  if (!sanctions) {
-    decision = "block"
-    reasons.push("Counterparty appears on a sanctions list")
-  }
-  if (!format) {
-    decision = "block"
-    reasons.push("Invalid counterparty")
-  }
-  if (!limit) {
-    decision = "block"
-    reasons.push("Exceeds daily limit")
-  }
-  if (decision === "allow" && !highValue) {
-    decision = "review"
-    reasons.push("High-value transfer: confirm in e-banking before signing")
-  }
-  res.json({ decision, reasons, checks })
+  res.json(screenTransfer({ from, to, amountUsdc }))
 })
 
 app.get("/compliance/dapps", (_req, res) =>
