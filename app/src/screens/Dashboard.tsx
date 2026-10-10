@@ -420,8 +420,8 @@ function Security({ wallet, bankSession, onLostDevice }: { wallet: Wallet; bankS
         </div>
       </div>
       <p className="muted">
-        Recovery (bank + backup) is bound on-chain to one function: replacing your passkey. It cannot send a single
-        token, even if both parties wanted to.
+        Recovery (bank + backup) is bound on-chain to one function: replacing your passkey. It can’t send tokens, and
+        every recovery waits out a delay during which this phone is alerted and can cancel it.
       </p>
       <Button variant="ghost" onClick={onLostDevice} block>
         Simulate losing this phone

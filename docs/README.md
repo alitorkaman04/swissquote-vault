@@ -1,11 +1,12 @@
 # Docs
 
-Everything the judges read lives here. Target files (fill in as we go):
-
-- `architecture.md` — components, where keys and key shares live, lifecycle create → sign → lose → recover
-- `threat-model.md` — attacker scenarios and how the design handles each
-- `custody-model.md` — the 2-of-3 guardian model and why Swissquote is not a custodian
-- `legal-swiss.md` — Swiss regulatory considerations (custody, ownership verification), with sources
-- `business-case.md` — retention, revenue, cost, new clients, with numbers
-- `pitch.md` — 3-minute pitch script and slide outline
-- `mocks.md` — exactly which parts are mocked and why (required by the challenge brief)
+| File | What it covers | Owner |
+| --- | --- | --- |
+| `custody-model.md` | The three keys, who can do what, why Swissquote is not a custodian, lifecycle | tech |
+| `architecture.md` | Components, where keys live, authentication, sequence diagrams, compliance layer, limitations | tech |
+| `threat-model.md` | 15 attacker scenarios and how recovery tells a client from an attacker | tech |
+| `mocks.md` | Exactly what is real and what is mocked | tech |
+| `demo-script.md` | The 3-minute live demo, minute by minute | tech + pitch |
+| `legal-swiss.md` | Swiss custody rules, ownership verification, FINMA / DLT Act, with sources | pitch |
+| `business-case.md` | Retention, revenue, costs, new clients, with numbers | pitch |
+| `pitch.md` | Slide outline and 3-minute script | pitch |
